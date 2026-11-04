@@ -1,0 +1,24 @@
+{
+  "name": "effectmc",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "vp run @effectmc/docs#dev",
+    "build": "vp run -r build",
+    "preview": "vp run @effectmc/docs#preview",
+    "check": "vp check",
+    "fmt": "vp fmt",
+    "lint": "vp lint",
+    "test": "vp test"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^6.0.3",
+    "vite-plus": "^1.4.0",
+    "vitest": "5.0.5"
+  }
+}
