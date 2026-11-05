@@ -1,0 +1,8 @@
+name: EffectMC
+version: '0.1.0'
+main: dev.effectmc.host.EffectMcHostPlugin
+loader: dev.effectmc.host.GraalLibraryLoader
+api-version: '26.3'
+description: Hosts EffectMC containers on Paper.
+authors:
+  - EffectMC
