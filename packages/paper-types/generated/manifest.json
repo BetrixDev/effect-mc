@@ -1,0 +1,14 @@
+{
+  "artifact": "io.papermc.paper:paper-api:26.3.build.230-stable",
+  "sha256": "af09986d2640dcf16b6843df87b821fe2d7ed24659e525a01fe3304cb59a4ca3",
+  "classes": 2134,
+  "externalTypes": 119,
+  "overlays": [
+    {
+      "target": "org.bukkit.World",
+      "mode": "merge",
+      "reason": "World's ForwardingAudience superinterface lives outside paper-api, so its sendMessage members are not generated.",
+      "file": "0001-world-audience.d.ts"
+    }
+  ]
+}

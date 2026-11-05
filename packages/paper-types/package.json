@@ -1,0 +1,34 @@
+{
+  "name": "@effectmc/paper-types",
+  "version": "0.0.0",
+  "private": false,
+  "description": "Generated TypeScript declarations for the pinned Paper API. Types only, with no runtime dependency on Paper.",
+  "files": [
+    "generated",
+    "README.md"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "types": "./generated/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./generated/index.d.ts"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "generate": "node scripts/generate.ts",
+    "check": "node scripts/generate.ts --check",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vp test",
+    "test:consumer": "tsc -p consumer/tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@xmcl/asm": "^1.0.1",
+    "fflate": "^0.8.3",
+    "typescript": "^6.0.3",
+    "vite-plus": "1.5.0"
+  }
+}
