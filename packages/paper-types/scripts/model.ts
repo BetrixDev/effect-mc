@@ -1,6 +1,7 @@
 import asm from "@xmcl/asm";
 import type { MethodVisitor as AsmMethodVisitor } from "@xmcl/asm";
 import {
+  classType,
   normalizeClassName,
   parseClassSignature,
   parseFieldDescriptor,
@@ -40,17 +41,12 @@ export interface MethodModel {
 export interface ClassModel {
   /** Dotted binary name, e.g. `org.bukkit.entity.Player`. */
   readonly fqn: string;
-  /** The JVM internal name, e.g. `org/bukkit/entity/Player`. */
-  readonly binaryName: string;
-  /** The file's package, e.g. `org.bukkit.entity`. */
-  readonly packageName: string;
-  /** The namespace that contains this declaration. */
+  /** The Java package, which is also the namespace that holds the declaration. */
   readonly namespacePath: string;
-  /** The name used inside `namespacePath`. */
+  /** The name used inside `namespacePath`, e.g. `Player$SpawnCategory`. */
   readonly simpleName: string;
   readonly kind: ClassKind;
   readonly isAbstract: boolean;
-  readonly isFinal: boolean;
   readonly typeParameters: ReadonlyArray<JTypeParameter>;
   readonly superClass: JType | undefined;
   readonly interfaces: ReadonlyArray<JType>;
@@ -163,6 +159,32 @@ class ModelVisitor extends ClassVisitor {
 
 /** Reads one class file into the generator's model. */
 export function readClass(bytes: Uint8Array, options: ReadOptions = {}): ClassModel | undefined {
+  const visitor = readVisitor(bytes, options);
+  if (visitor === undefined) {
+    return undefined;
+  }
+  const identity = identifyClass(visitor);
+  if (identity === undefined) {
+    return undefined;
+  }
+
+  const binaryName = visitor.binaryName;
+  const hierarchy = readHierarchy(visitor, options);
+  const { enumConstants, fields } = readFields(visitor.fields, binaryName, options);
+  const { methods, constructors } = readMethods(visitor.methods, binaryName, options);
+
+  return {
+    ...identity,
+    isAbstract: (visitor.access & ACC_ABSTRACT) !== 0,
+    ...hierarchy,
+    fields,
+    methods,
+    constructors,
+    enumConstants,
+  };
+}
+
+function readVisitor(bytes: Uint8Array, options: ReadOptions): ModelVisitor | undefined {
   const visitor = new ModelVisitor(Opcodes.ASM5);
   try {
     new ClassReader(bytes).accept(visitor);
@@ -170,7 +192,18 @@ export function readClass(bytes: Uint8Array, options: ReadOptions = {}): ClassMo
     warn(options, `skipped unreadable class: ${String(error)}`);
     return undefined;
   }
+  return visitor;
+}
 
+interface ClassIdentity {
+  readonly fqn: string;
+  readonly namespacePath: string;
+  readonly simpleName: string;
+  readonly kind: ClassKind;
+}
+
+/** Returns the declaration the class contributes, or skips it entirely. */
+function identifyClass(visitor: ModelVisitor): ClassIdentity | undefined {
   const binaryName = visitor.binaryName;
   if (binaryName === "" || binaryName.endsWith("/package-info")) {
     return undefined;
@@ -184,9 +217,7 @@ export function readClass(bytes: Uint8Array, options: ReadOptions = {}): ClassMo
   if (visitor.innerName !== null && /^(?:\d+|lambda\$)/u.test(visitor.innerName)) {
     return undefined;
   }
-
-  const isPublic = (visitor.access & ACC_PUBLIC) !== 0;
-  if (!isPublic) {
+  if ((visitor.access & ACC_PUBLIC) === 0) {
     return undefined;
   }
   if (binaryName.includes("$") && visitor.innerName === null) {
@@ -194,66 +225,95 @@ export function readClass(bytes: Uint8Array, options: ReadOptions = {}): ClassMo
     return undefined;
   }
 
-  const isAnnotation = (visitor.access & ACC_ANNOTATION) !== 0;
-  const isEnum = (visitor.access & ACC_ENUM) !== 0;
-  const isInterface = (visitor.access & ACC_INTERFACE) !== 0;
-  const kind: ClassKind = isAnnotation
-    ? "annotation"
-    : isEnum
-      ? "enum"
-      : isInterface
-        ? "interface"
-        : "class";
+  return {
+    fqn: normalizeClassName(binaryName),
+    namespacePath: packageOf(binaryName),
+    simpleName: lastSegment(binaryName),
+    kind: classKind(visitor.access),
+  };
+}
 
-  const namespacePath = packageOf(binaryName);
-  const simpleName = lastSegment(binaryName);
+function classKind(access: number): ClassKind {
+  if ((access & ACC_ANNOTATION) !== 0) {
+    return "annotation";
+  }
+  if ((access & ACC_ENUM) !== 0) {
+    return "enum";
+  }
+  if ((access & ACC_INTERFACE) !== 0) {
+    return "interface";
+  }
+  return "class";
+}
 
-  const typeParameters: JTypeParameter[] = [];
+interface Hierarchy {
+  readonly typeParameters: ReadonlyArray<JTypeParameter>;
+  readonly superClass: JType | undefined;
+  readonly interfaces: ReadonlyArray<JType>;
+}
+
+/** Reads generic signatures, falling back to erased descriptors per class. */
+function readHierarchy(visitor: ModelVisitor, options: ReadOptions): Hierarchy {
+  let typeParameters: JTypeParameter[] = [];
   let superClass: JType | undefined;
   let interfaces: JType[] = [];
 
   if (visitor.signature !== null) {
     try {
       const parsed = parseClassSignature(visitor.signature);
-      typeParameters.push(...parsed.typeParameters);
+      typeParameters = [...parsed.typeParameters];
       superClass = parsed.superClass;
       interfaces = [...parsed.interfaces];
     } catch (error) {
-      warn(options, `class signature fallback for ${binaryName}: ${String(error)}`);
+      warn(options, `class signature fallback for ${visitor.binaryName}: ${String(error)}`);
     }
   }
 
-  if (superClass === undefined || superClass === null) {
-    superClass = visitor.superName === null ? undefined : classType(visitor.superName);
-  }
-  if (interfaces.length === 0) {
-    interfaces = visitor.interfaces.map(classType);
-  }
+  return {
+    typeParameters,
+    superClass:
+      superClass ??
+      (visitor.superName === null ? undefined : classType(normalizeClassName(visitor.superName))),
+    interfaces:
+      interfaces.length === 0
+        ? visitor.interfaces.map((name) => classType(normalizeClassName(name)))
+        : interfaces,
+  };
+}
 
+function readFields(
+  fields: ReadonlyArray<RawField>,
+  binaryName: string,
+  options: ReadOptions,
+): { enumConstants: string[]; fields: FieldModel[] } {
   const enumConstants: string[] = [];
-  const fields: FieldModel[] = [];
-  for (const field of visitor.fields) {
-    if ((field.access & ACC_PUBLIC) === 0) {
-      continue;
-    }
-    if ((field.access & ACC_SYNTHETIC) !== 0) {
+  const models: FieldModel[] = [];
+  for (const field of fields) {
+    if ((field.access & ACC_PUBLIC) === 0 || (field.access & ACC_SYNTHETIC) !== 0) {
       continue;
     }
     if ((field.access & ACC_ENUM) !== 0) {
       enumConstants.push(field.name);
       continue;
     }
-    fields.push({
+    models.push({
       name: field.name,
       type: readFieldType(field, binaryName, options),
       isStatic: (field.access & ACC_STATIC) !== 0,
       isFinal: (field.access & ACC_FINAL) !== 0,
     });
   }
+  return { enumConstants, fields: models };
+}
 
-  const methods: MethodModel[] = [];
+function readMethods(
+  methods: ReadonlyArray<RawMethod>,
+  binaryName: string,
+  options: ReadOptions,
+): { methods: MethodModel[]; constructors: MethodModel[] } {
+  const models: MethodModel[] = [];
   const constructors: MethodModel[] = [];
-  for (const method of visitor.methods) {
+  for (const method of methods) {
     if ((method.access & ACC_PUBLIC) === 0) {
       continue;
     }
@@ -283,31 +343,10 @@ export function readClass(bytes: Uint8Array, options: ReadOptions = {}): ClassMo
     if (method.name === "<init>") {
       constructors.push(model);
     } else {
-      methods.push(model);
+      models.push(model);
     }
   }
-
-  return {
-    fqn: normalizeClassName(binaryName),
-    binaryName,
-    packageName: packageOf(binaryName),
-    namespacePath,
-    simpleName,
-    kind,
-    isAbstract: (visitor.access & ACC_ABSTRACT) !== 0,
-    isFinal: (visitor.access & ACC_FINAL) !== 0,
-    typeParameters,
-    superClass,
-    interfaces,
-    fields,
-    methods,
-    constructors,
-    enumConstants,
-  };
-}
-
-function classType(internalName: string): JType {
-  return { kind: "class", name: normalizeClassName(internalName), args: [] };
+  return { methods: models, constructors };
 }
 
 function packageOf(binaryName: string): string {

@@ -23,7 +23,35 @@ export interface Artifact {
 }
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const pin = JSON.parse(readFileSync(join(packageRoot, "paper-api.json"), "utf8")) as PaperApiPin;
+const pinPath = join(packageRoot, "paper-api.json");
+
+/** Validates the pin file instead of trusting `JSON.parse`'s `any`. */
+export function parsePin(text: string, source: string): PaperApiPin {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`${source}: invalid JSON: ${String(error)}`);
+  }
+  if (typeof value !== "object" || value === null) {
+    throw new Error(`${source}: expected a JSON object`);
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    coordinate: requireString(record, "coordinate", source),
+    version: requireString(record, "version", source),
+    url: requireString(record, "url", source),
+    sha256: requireString(record, "sha256", source),
+  };
+}
+
+function requireString(record: Record<string, unknown>, field: string, source: string): string {
+  const value = record[field];
+  if (typeof value !== "string" || value === "") {
+    throw new Error(`${source}: ${field} must be a non-empty string`);
+  }
+  return value;
+}
 
 /**
  * Loads the pinned Paper API jar, downloading it into the package cache the
@@ -31,7 +59,8 @@ const pin = JSON.parse(readFileSync(join(packageRoot, "paper-api.json"), "utf8")
  * artifact cannot silently change the generated output.
  */
 export async function loadPaperApi(): Promise<Artifact> {
-  const bytes = await loadJar();
+  const pin = readPin();
+  const bytes = await loadJar(pin);
   const hash = sha256(bytes);
   if (hash !== pin.sha256) {
     throw new Error(
@@ -65,7 +94,11 @@ export async function loadPaperApi(): Promise<Artifact> {
   return { pin, classes };
 }
 
-async function loadJar(): Promise<Uint8Array> {
+function readPin(): PaperApiPin {
+  return parsePin(readFileSync(pinPath, "utf8"), pinPath);
+}
+
+async function loadJar(pin: PaperApiPin): Promise<Uint8Array> {
   const cacheDir = join(packageRoot, ".cache");
   const cachePath = join(cacheDir, `paper-api-${pin.version}.jar`);
 

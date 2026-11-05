@@ -1,7 +1,21 @@
-import type { ClassModel, FieldModel, MethodModel } from "./model.ts";
-import type { JType, JTypeParameter } from "./jvm.ts";
-import type { Overlay } from "./overlays.ts";
 import type { PaperApiPin } from "./artifact.ts";
+import {
+  renderDeclaration,
+  renderInterfaceStatics,
+  type DeclarationContext,
+} from "./declarations.ts";
+import { inheritedMethodNames } from "./inheritance.ts";
+import type { ClassModel } from "./model.ts";
+import type { Overlay } from "./overlays.ts";
+import {
+  createTypeRenderer,
+  indent,
+  renderDefaultedTypeParameters,
+  renderTypeParameterNames,
+  safePath,
+  safeSegment,
+  type RenderType,
+} from "./render.ts";
 import { compareStrings } from "./sort.ts";
 
 export interface EmitInput {
@@ -15,10 +29,6 @@ export interface EmitResult {
   readonly manifest: string;
   readonly classCount: number;
   readonly externalCount: number;
-}
-
-interface NamespaceBlock {
-  readonly entries: string[];
 }
 
 const GLOBAL_ALIAS_NAMES = new Set([
@@ -40,126 +50,40 @@ const GLOBAL_ALIAS_NAMES = new Set([
   "WeakSet",
 ]);
 
-const LIST_TYPES = new Set([
-  "java.util.AbstractList",
-  "java.util.ArrayList",
-  "java.util.Deque",
-  "java.util.LinkedList",
-  "java.util.List",
-  "java.util.Queue",
-  "java.util.SequencedCollection",
-  "java.util.Stack",
-  "java.util.Vector",
-]);
-
-const COLLECTION_TYPES = new Set(["java.lang.Iterable", "java.util.Collection"]);
-
-const SET_TYPES = new Set([
-  "java.util.Set",
-  "java.util.SortedSet",
-  "java.util.NavigableSet",
-  "java.util.HashSet",
-  "java.util.LinkedHashSet",
-  "java.util.TreeSet",
-  "java.util.EnumSet",
-  "java.util.AbstractSet",
-]);
-
-const MAP_TYPES = new Set([
-  "java.util.Map",
-  "java.util.SortedMap",
-  "java.util.NavigableMap",
-  "java.util.HashMap",
-  "java.util.LinkedHashMap",
-  "java.util.TreeMap",
-  "java.util.EnumMap",
-  "java.util.AbstractMap",
-  "java.util.concurrent.ConcurrentMap",
-]);
-
-const BOXED_TYPES: Record<string, string> = {
-  "java.lang.Boolean": "boolean",
-  "java.lang.Byte": "number",
-  "java.lang.Character": "string",
-  "java.lang.Double": "number",
-  "java.lang.Float": "number",
-  "java.lang.Integer": "number",
-  "java.lang.Long": "number",
-  "java.lang.Number": "number",
-  "java.lang.Short": "number",
-};
-
 /** Emits one deterministic declaration file and its manifest. */
 export function emit(input: EmitInput): EmitResult {
   const classes = [...input.classes].sort((left, right) => compareStrings(left.fqn, right.fqn));
   const byFqn = new Map(classes.map((model) => [model.fqn, model]));
-  const arity = new Map(classes.map((model) => [model.fqn, model.typeParameters.length]));
+  assertOverlayTargets(input.overlays, byFqn);
   const replaceTargets = new Set(
     input.overlays.filter((overlay) => overlay.mode === "replace").map((overlay) => overlay.target),
   );
-  for (const overlay of input.overlays) {
-    if (!byFqn.has(overlay.target)) {
-      throw new Error(
-        `Overlay ${overlay.file} targets ${overlay.target}, which is not in the pinned artifact`,
-      );
-    }
-  }
+  const types = createTypeRenderer(
+    new Map(classes.map((model) => [model.fqn, model.typeParameters.length])),
+  );
+  const context: DeclarationContext = { classes: byFqn, inherited: inheritedMethodNames(byFqn) };
 
-  const external = new Map<string, number>();
-  const blocks = new Map<string, NamespaceBlock>();
-  const aliases: string[] = [];
-  const inheritedMethods = buildInheritedMethodNames(byFqn);
-
-  const renderType = (type: JType): string => renderJType(type, arity, external);
-
+  const blocks = new Map<string, string[]>();
   for (const model of classes) {
     if (replaceTargets.has(model.fqn)) {
       continue;
     }
-    const owner = model.namespacePath;
-    blockFor(blocks, owner).entries.push(renderClass(model, renderType, byFqn, inheritedMethods));
-
+    appendTo(blocks, model.namespacePath, renderDeclaration(model, context, types.render));
     if (model.kind === "interface" || model.kind === "annotation") {
-      const statics = renderInterfaceStatics(model, renderType);
+      const statics = renderInterfaceStatics(model, types.render);
       if (statics.length > 0) {
-        blockFor(blocks, model.fqn).entries.push(...statics);
+        appendTo(blocks, model.fqn, ...statics);
       }
     }
   }
 
-  const body: string[] = [];
-  for (const [path, block] of [...blocks.entries()].sort(([left], [right]) =>
-    compareStrings(left, right),
-  )) {
-    const entries = block.entries.sort((left, right) => compareStrings(left, right));
-    if (path === "") {
-      body.push(...entries);
-    } else {
-      body.push(`export namespace ${safePath(path)} {`, ...indent(entries), "}");
-    }
-  }
-
-  appendAliases(classes, aliases, renderType);
-
-  const externalBlocks = renderExternalStubs(external);
+  const aliases = renderAliases(classes, types.render);
+  const externalBlocks = renderExternalStubs(types.external);
   const overlaySection = renderOverlays(input.overlays);
 
-  const header = [
-    "/**",
-    " * Paper API declarations, generated from the pinned artifact.",
-    ` * ${input.pin.coordinate}`,
-    ` * SHA-256: ${input.pin.sha256}`,
-    " *",
-    " * Do not edit this file by hand. Run `npm run generate --workspace",
-    " * @effectmc/paper-types`; use an overlay for anything the generator cannot",
-    " * express, so the patch survives regeneration.",
-    " */",
-    "",
-  ];
-
   const dts = [
-    ...header,
-    ...body,
+    ...renderHeader(input.pin),
+    ...renderNamespaces(blocks),
     ...(externalBlocks.length > 0 ? ["", ...externalBlocks] : []),
     ...(overlaySection.length > 0 ? ["", ...overlaySection] : []),
     ...(aliases.length > 0
@@ -173,7 +97,7 @@ export function emit(input: EmitInput): EmitResult {
       artifact: input.pin.coordinate,
       sha256: input.pin.sha256,
       classes: classes.length,
-      externalTypes: external.size,
+      externalTypes: types.external.size,
       overlays: input.overlays.map((overlay) => ({
         target: overlay.target,
         mode: overlay.mode,
@@ -189,482 +113,73 @@ export function emit(input: EmitInput): EmitResult {
     dts,
     manifest,
     classCount: classes.length,
-    externalCount: external.size,
+    externalCount: types.external.size,
   };
 }
 
-function blockFor(blocks: Map<string, NamespaceBlock>, path: string): NamespaceBlock {
-  let block = blocks.get(path);
-  if (block === undefined) {
-    block = { entries: [] };
-    blocks.set(path, block);
-  }
-  return block;
-}
-
-function renderClass(
-  model: ClassModel,
-  renderType: (type: JType) => string,
-  byFqn: ReadonlyMap<string, ClassModel>,
-  inheritedMethods: ReadonlyMap<string, ReadonlySet<string>>,
-): string {
-  const name = `${safeSegment(model.simpleName)}${renderTypeParameters(
-    model.typeParameters,
-    renderType,
-  )}`;
-
-  if (model.kind === "interface" || model.kind === "annotation") {
-    const skipped = inheritedMethods.get(model.fqn) ?? new Set<string>();
-    const own = renderInterfaceMembers(model, renderType, skipped);
-    const interfaces = model.interfaces.filter((type) => isGeneratedInterface(type, byFqn));
-    const kept: JType[] = [];
-    const merged: string[] = [];
-    const methodLines = new Set(own.filter((line) => line.includes("(")));
-    const methodNames = new Set(
-      model.methods
-        .filter((method) => !method.isStatic && !skipped.has(method.name))
-        .map((method) => method.name),
-    );
-    const fieldNames = new Set(
-      model.fields.filter((field) => !field.isStatic).map((field) => field.name),
-    );
-    for (const base of interfaces) {
-      const members = collectInterfaceMembers(base, renderType, byFqn);
-      const hasMethodConflict = members.methods.some((method) => methodNames.has(method.name));
-      const hasFieldConflict = members.fields.some((field) => fieldNames.has(field.name));
-      if (kept.length === 0 || (!hasMethodConflict && !hasFieldConflict)) {
-        kept.push(base);
-        for (const method of members.methods) {
-          methodLines.add(method.line);
-          methodNames.add(method.name);
-        }
-        for (const field of members.fields) {
-          fieldNames.add(field.name);
-        }
-        continue;
-      }
-      for (const field of members.fields) {
-        if (!fieldNames.has(field.name)) {
-          fieldNames.add(field.name);
-          merged.push(field.line);
-        }
-      }
-      for (const method of members.methods) {
-        if (!methodLines.has(method.line)) {
-          methodLines.add(method.line);
-          methodNames.add(method.name);
-          merged.push(method.line);
-        }
-      }
+function assertOverlayTargets(
+  overlays: ReadonlyArray<Overlay>,
+  classes: ReadonlyMap<string, ClassModel>,
+): void {
+  for (const overlay of overlays) {
+    if (!classes.has(overlay.target)) {
+      throw new Error(
+        `Overlay ${overlay.file} targets ${overlay.target}, which is not in the pinned artifact`,
+      );
     }
-    const bases = kept.map(renderType);
-    const extension = bases.length > 0 ? ` extends ${bases.join(", ")}` : "";
-    return joinDeclaration(`export interface ${name}${extension}`, [...own, ...merged]);
-  }
-
-  if (model.kind === "enum") {
-    const interfaces = model.interfaces
-      .filter((type) => isGeneratedInterface(type, byFqn))
-      .map(renderType);
-    const implementation = interfaces.length > 0 ? ` implements ${interfaces.join(", ")}` : "";
-    const members: string[] = ["private constructor();"];
-    for (const constant of [...model.enumConstants].sort((left, right) =>
-      compareStrings(left, right),
-    )) {
-      members.push(`static readonly ${safeMember(constant)}: ${name};`);
-    }
-    members.push(...renderClassMembers(model, renderType, true, new Set<string>()));
-    members.push(
-      ...renderInterfaceMethods(
-        model,
-        renderType,
-        byFqn,
-        presentMemberNames(model, new Set<string>()),
-      ),
-    );
-    return joinDeclaration(`export class ${name}${implementation}`, members);
-  }
-
-  const superClass = model.superClass;
-  const extension =
-    superClass !== undefined &&
-    superClass.kind === "class" &&
-    superClass.name !== "java.lang.Object" &&
-    superClass.name !== "java.lang.Enum" &&
-    byFqn.has(superClass.name)
-      ? ` extends ${renderType(superClass)}`
-      : "";
-  const interfaces = model.interfaces
-    .filter((type) => isGeneratedInterface(type, byFqn))
-    .map(renderType);
-  const implementation = interfaces.length > 0 ? ` implements ${interfaces.join(", ")}` : "";
-  const skipped = inheritedMethods.get(model.fqn) ?? new Set<string>();
-  const members = renderClassMembers(model, renderType, false, skipped);
-  members.push(
-    ...renderInterfaceMethods(model, renderType, byFqn, presentMemberNames(model, skipped)),
-  );
-  const methodLines = new Set(members.filter((line) => line.includes("(")));
-  members.push(...renderSuperOverloads(model, renderType, byFqn, methodLines));
-  const prefix = model.isAbstract ? "export abstract class" : "export class";
-  return joinDeclaration(`${prefix} ${name}${extension}${implementation}`, members);
-}
-
-function renderInterfaceMembers(
-  model: ClassModel,
-  renderType: (type: JType) => string,
-  skippedMethods: ReadonlySet<string>,
-): string[] {
-  const members: string[] = [];
-  for (const field of model.fields) {
-    if (field.isStatic) {
-      continue;
-    }
-    members.push(
-      `${field.isFinal ? "readonly " : ""}${safeMember(field.name)}: ${renderType(field.type)};`,
-    );
-  }
-  for (const method of model.methods) {
-    if (method.isStatic || skippedMethods.has(method.name)) {
-      continue;
-    }
-    members.push(renderMethod(method, renderType, false));
-  }
-  return members;
-}
-
-function collectInterfaceMembers(
-  type: JType,
-  renderType: (type: JType) => string,
-  byFqn: ReadonlyMap<string, ClassModel>,
-  initialSubstitution: ReadonlyMap<string, JType> = new Map(),
-): {
-  readonly fields: Array<{ readonly name: string; readonly line: string }>;
-  readonly methods: Array<{ readonly name: string; readonly line: string }>;
-} {
-  const fields: Array<{ name: string; line: string }> = [];
-  const methods: Array<{ name: string; line: string }> = [];
-  const fieldNames = new Set<string>();
-  const methodLines = new Set<string>();
-
-  const visit = (current: JType, substitution: ReadonlyMap<string, JType>): void => {
-    if (current.kind !== "class") {
-      return;
-    }
-    const parent = byFqn.get(current.name);
-    if (parent === undefined || (parent.kind !== "interface" && parent.kind !== "annotation")) {
-      return;
-    }
-    const local = new Map(substitution);
-    parent.typeParameters.forEach((parameter, index) => {
-      const argument = current.args[index] ?? {
-        kind: "class" as const,
-        name: "java.lang.Object",
-        args: [],
-      };
-      local.set(parameter.name, substituteType(argument, substitution));
-    });
-    for (const field of parent.fields) {
-      if (field.isStatic || fieldNames.has(field.name)) {
-        continue;
-      }
-      fieldNames.add(field.name);
-      fields.push({
-        name: field.name,
-        line: `readonly ${safeMember(field.name)}: ${renderType(substituteType(field.type, local))};`,
-      });
-    }
-    for (const method of parent.methods) {
-      if (method.isStatic) {
-        continue;
-      }
-      const line = renderMethod(substituteMethod(method, local), renderType);
-      if (!methodLines.has(line)) {
-        methodLines.add(line);
-        methods.push({ name: method.name, line });
-      }
-    }
-    for (const base of parent.interfaces) {
-      visit(base, local);
-    }
-  };
-
-  visit(type, initialSubstitution);
-  return { fields, methods };
-}
-
-function renderInterfaceStatics(model: ClassModel, renderType: (type: JType) => string): string[] {
-  const members: string[] = [];
-  for (const field of model.fields) {
-    if (!field.isStatic) {
-      continue;
-    }
-    members.push(`export const ${safeMember(field.name)}: ${renderType(field.type)};`);
-  }
-  for (const method of model.methods) {
-    if (!method.isStatic) {
-      continue;
-    }
-    members.push(`export function ${renderMethod(method, renderType, false)}`);
-  }
-  return members;
-}
-
-function renderClassMembers(
-  model: ClassModel,
-  renderType: (type: JType) => string,
-  enumClass: boolean,
-  skippedMethods: ReadonlySet<string>,
-): string[] {
-  const members: string[] = [];
-  const seen = new Set<string>();
-
-  for (const field of [...model.fields].sort(compareFields)) {
-    const line = renderField(field, renderType);
-    if (!seen.has(line)) {
-      seen.add(line);
-      members.push(line);
-    }
-  }
-
-  if (model.constructors.length > 0) {
-    for (const constructor of [...model.constructors].sort(compareMethods)) {
-      const line = `constructor(${renderParameters(constructor, renderType)});`;
-      if (!seen.has(line)) {
-        seen.add(line);
-        members.push(line);
-      }
-    }
-  } else if (!enumClass) {
-    // A package-private constructor is not in the generated API. Keep the
-    // class non-constructable without closing the door on generated subclasses.
-    members.push("protected constructor();");
-  }
-
-  for (const method of [...model.methods].sort(compareMethods)) {
-    if (skippedMethods.has(method.name)) {
-      continue;
-    }
-    const line = renderMethod(method, renderType);
-    if (!seen.has(line)) {
-      seen.add(line);
-      members.push(line);
-    }
-  }
-
-  return members;
-}
-
-function renderField(field: FieldModel, renderType: (type: JType) => string): string {
-  const staticPrefix = field.isStatic ? "static " : "";
-  const readonly = field.isFinal ? "readonly " : "";
-  return `${staticPrefix}${readonly}${safeMember(field.name)}: ${renderType(field.type)};`;
-}
-
-function renderMethod(
-  method: MethodModel,
-  renderType: (type: JType) => string,
-  includeStatic = true,
-): string {
-  const typeParameters =
-    method.typeParameters.length > 0
-      ? `${renderTypeParameters(method.typeParameters, renderType)}`
-      : "";
-  const staticPrefix = includeStatic && method.isStatic ? "static " : "";
-  const parameters = renderParameters(method, renderType);
-  const result = `: ${renderType(method.result)}`;
-  return `${staticPrefix}${safeMember(method.name)}${typeParameters}(${parameters})${result};`;
-}
-
-function renderParameters(method: MethodModel, renderType: (type: JType) => string): string {
-  return method.parameters
-    .map((parameter, index) => {
-      const isLast = index === method.parameters.length - 1;
-      if (isLast && method.isVarargs) {
-        const type = renderType(parameter.type);
-        const arrayType = parameter.type.kind === "array" ? type : arrayOf(type);
-        return `...${safeSegment(parameter.name)}: ${arrayType}`;
-      }
-      return `${safeSegment(parameter.name)}: ${renderType(parameter.type)}`;
-    })
-    .join(", ");
-}
-
-function renderTypeParameters(
-  parameters: ReadonlyArray<JTypeParameter>,
-  renderType: (type: JType) => string,
-): string {
-  if (parameters.length === 0) {
-    return "";
-  }
-  const rendered = parameters.map((parameter) => {
-    const bounds = parameter.bounds
-      .filter((bound) => !(bound.kind === "class" && bound.name === "java.lang.Object"))
-      .map(renderType);
-    if (bounds.length === 0) {
-      return safeSegment(parameter.name);
-    }
-    return `${safeSegment(parameter.name)} extends ${bounds.join(" & ")}`;
-  });
-  return `<${rendered.join(", ")}>`;
-}
-
-function renderJType(
-  type: JType,
-  arity: ReadonlyMap<string, number>,
-  external: Map<string, number>,
-): string {
-  switch (type.kind) {
-    case "primitive":
-      return primitive(type.name);
-    case "void":
-      return "void";
-    case "typevar":
-      return safeSegment(type.name);
-    case "array": {
-      const element = renderJType(type.element, arity, external);
-      return arrayOf(element);
-    }
-    case "wildcard":
-      if (type.variance === "extends" && type.bound !== undefined) {
-        return renderJType(type.bound, arity, external);
-      }
-      return "any";
-    case "class":
-      return renderClassType(type, arity, external);
   }
 }
 
-function renderClassType(
-  type: Extract<JType, { kind: "class" }>,
-  arity: ReadonlyMap<string, number>,
-  external: Map<string, number>,
-): string {
-  const name = type.name;
-  const args = type.args.map((argument) => renderJType(argument, arity, external));
+function appendTo(map: Map<string, string[]>, key: string, ...values: string[]): void {
+  let lines = map.get(key);
+  if (lines === undefined) {
+    lines = [];
+    map.set(key, lines);
+  }
+  lines.push(...values);
+}
 
-  if (name === "java.lang.String" || name === "java.lang.CharSequence") {
-    return "string";
-  }
-  if (name === "java.lang.Object") {
-    return "unknown";
-  }
-  if (name === "java.lang.Void") {
-    return "void";
-  }
-  const boxed = BOXED_TYPES[name];
-  if (boxed !== undefined) {
-    return boxed;
-  }
-  if (name === "java.lang.Class") {
-    return "unknown";
-  }
-  if (LIST_TYPES.has(name)) {
-    return `${wrapType(args[0] ?? "unknown")}[]`;
-  }
-  if (COLLECTION_TYPES.has(name)) {
-    const element = args[0] ?? "unknown";
-    return `${wrapType(element)}[] | ReadonlySet<${element}>`;
-  }
-  if (SET_TYPES.has(name)) {
-    return `ReadonlySet<${args[0] ?? "unknown"}>`;
-  }
-  if (MAP_TYPES.has(name)) {
-    return `ReadonlyMap<${args[0] ?? "unknown"}, ${args[1] ?? "unknown"}>`;
-  }
-  if (name === "java.util.Optional") {
-    return `${wrapType(args[0] ?? "unknown")} | undefined`;
-  }
-  if (name === "java.util.concurrent.CompletableFuture") {
-    return `Promise<${args[0] ?? "unknown"}>`;
-  }
-  const functionType = renderFunctionType(name, args);
-  if (functionType !== undefined) {
-    return functionType;
-  }
+function renderHeader(pin: PaperApiPin): string[] {
+  return [
+    "/**",
+    " * Paper API declarations, generated from the pinned artifact.",
+    ` * ${pin.coordinate}`,
+    ` * SHA-256: ${pin.sha256}`,
+    " *",
+    " * Do not edit this file by hand. Run `npm run generate --workspace",
+    " * @effectmc/paper-types`; use an overlay for anything the generator cannot",
+    " * express, so the patch survives regeneration.",
+    " */",
+    "",
+  ];
+}
 
-  if (arity.has(name)) {
-    const expected = arity.get(name) ?? 0;
-    const padded = [...args];
-    while (padded.length < expected) {
-      padded.push("any");
+/** Renders namespace blocks; the empty path is the file's top level. */
+function renderNamespaces(entries: ReadonlyMap<string, ReadonlyArray<string>>): string[] {
+  const output: string[] = [];
+  for (const [path, lines] of sortedEntries(entries)) {
+    const sorted = [...lines].sort(compareStrings);
+    if (path === "") {
+      output.push(...sorted);
+    } else {
+      output.push(`export namespace ${safePath(path)} {`, ...indent(sorted), "}");
     }
-    return `${safePath(name)}${renderTypeArguments(padded.slice(0, expected))}`;
   }
-
-  external.set(name, Math.max(external.get(name) ?? 0, args.length));
-  return `__paperExternal.${safePath(name)}${renderTypeArguments(args)}`;
-}
-
-function renderFunctionType(name: string, args: ReadonlyArray<string>): string | undefined {
-  switch (name) {
-    case "java.util.function.Function":
-      return `(value: ${args[0] ?? "unknown"}) => ${args[1] ?? "unknown"}`;
-    case "java.util.function.BiFunction":
-      return `(left: ${args[0] ?? "unknown"}, right: ${args[1] ?? "unknown"}) => ${args[2] ?? "unknown"}`;
-    case "java.util.function.Predicate":
-      return `(value: ${args[0] ?? "unknown"}) => boolean`;
-    case "java.util.function.BiPredicate":
-      return `(left: ${args[0] ?? "unknown"}, right: ${args[1] ?? "unknown"}) => boolean`;
-    case "java.util.function.Consumer":
-      return `(value: ${args[0] ?? "unknown"}) => void`;
-    case "java.util.function.BiConsumer":
-      return `(left: ${args[0] ?? "unknown"}, right: ${args[1] ?? "unknown"}) => void`;
-    case "java.util.function.Supplier":
-      return `() => ${args[0] ?? "unknown"}`;
-    case "java.util.function.UnaryOperator":
-      return `(value: ${args[0] ?? "unknown"}) => ${args[0] ?? "unknown"}`;
-    case "java.util.function.BinaryOperator":
-      return `(left: ${args[0] ?? "unknown"}, right: ${args[0] ?? "unknown"}) => ${args[0] ?? "unknown"}`;
-    default:
-      return undefined;
-  }
-}
-
-function renderTypeArguments(args: ReadonlyArray<string>): string {
-  if (args.length === 0) {
-    return "";
-  }
-  return `<${args.join(", ")}>`;
+  return output;
 }
 
 function renderExternalStubs(external: ReadonlyMap<string, number>): string[] {
   const namespaces = new Map<string, string[]>();
-  for (const [fqn, count] of [...external.entries()].sort(([left], [right]) =>
-    compareStrings(left, right),
-  )) {
-    const parts = fqn.split(".");
-    const name = parts.pop();
-    if (name === undefined) {
-      continue;
-    }
-    const path = parts.join(".");
-    const parameters = Array.from({ length: count }, (_value, index) => `T${index} = unknown`);
+  for (const [fqn, arity] of sortedEntries(external)) {
+    const separator = fqn.lastIndexOf(".");
+    const path = separator === -1 ? "" : fqn.slice(0, separator);
+    const name = fqn.slice(separator + 1);
+    const parameters = Array.from({ length: arity }, (_value, index) => `T${index} = unknown`);
     const generic = parameters.length > 0 ? `<${parameters.join(", ")}>` : "";
-    const line = `export interface ${safeSegment(name)}${generic} {}`;
-    const fullPath = path === "" ? "__paperExternal" : `__paperExternal.${path}`;
-    let lines = namespaces.get(fullPath);
-    if (lines === undefined) {
-      lines = [];
-      namespaces.set(fullPath, lines);
-    }
-    lines.push(line);
+    const target = path === "" ? "__paperExternal" : `__paperExternal.${path}`;
+    appendTo(namespaces, target, `export interface ${safeSegment(name)}${generic} {}`);
   }
-
-  const output: string[] = [];
-  for (const [path, lines] of [...namespaces.entries()].sort(([left], [right]) =>
-    compareStrings(left, right),
-  )) {
-    if (path === "") {
-      output.push(...lines);
-      continue;
-    }
-    output.push(
-      `export namespace ${safePath(path)} {`,
-      ...indent(lines.sort((left, right) => compareStrings(left, right))),
-      "}",
-    );
-  }
-  return output;
+  return renderNamespaces(namespaces);
 }
 
 function renderOverlays(overlays: ReadonlyArray<Overlay>): string[] {
@@ -685,351 +200,34 @@ function renderOverlays(overlays: ReadonlyArray<Overlay>): string[] {
   return lines;
 }
 
-function appendAliases(
-  classes: ReadonlyArray<ClassModel>,
-  aliases: string[],
-  renderType: (type: JType) => string,
-): void {
+/** Aliases for class names that appear exactly once and are safe to import bare. */
+function renderAliases(classes: ReadonlyArray<ClassModel>, render: RenderType): string[] {
   const candidates = classes.filter((model) => !model.simpleName.includes("$"));
   const counts = new Map<string, number>();
   for (const model of candidates) {
     counts.set(model.simpleName, (counts.get(model.simpleName) ?? 0) + 1);
   }
   const roots = new Set(
-    classes.flatMap((model) => model.packageName.split(".")).filter((segment) => segment !== ""),
+    classes.flatMap((model) => model.namespacePath.split(".")).filter((segment) => segment !== ""),
   );
+
+  const aliases: string[] = [];
   for (const model of candidates) {
     if ((counts.get(model.simpleName) ?? 0) !== 1) {
       continue;
     }
-    if (GLOBAL_ALIAS_NAMES.has(model.simpleName)) {
+    if (GLOBAL_ALIAS_NAMES.has(model.simpleName) || roots.has(model.simpleName)) {
       continue;
     }
-    if (roots.has(model.simpleName)) {
-      continue;
-    }
-    const parameters = model.typeParameters;
-    const declaration =
-      parameters.length > 0
-        ? `<${parameters
-            .map((parameter) => {
-              const bounds = parameter.bounds
-                .filter((bound) => !(bound.kind === "class" && bound.name === "java.lang.Object"))
-                .map(renderType);
-              return bounds.length > 0
-                ? `${parameter.name} extends ${bounds.join(" & ")} = any`
-                : `${parameter.name} = any`;
-            })
-            .join(", ")}>`
-        : "";
-    const argumentsList =
-      parameters.length > 0 ? `<${parameters.map((parameter) => parameter.name).join(", ")}>` : "";
+    const declaration = renderDefaultedTypeParameters(model.typeParameters, render);
+    const argumentsList = renderTypeParameterNames(model.typeParameters);
     aliases.push(
       `export type ${safeSegment(model.simpleName)}${declaration} = ${safePath(model.fqn)}${argumentsList};`,
     );
   }
-  aliases.sort((left, right) => compareStrings(left, right));
+  return aliases.sort(compareStrings);
 }
 
-function buildInheritedMethodNames(
-  byFqn: ReadonlyMap<string, ClassModel>,
-): Map<string, Set<string>> {
-  const cache = new Map<string, Set<string>>();
-  const visiting = new Set<string>();
-
-  const visit = (model: ClassModel): Set<string> => {
-    const cached = cache.get(model.fqn);
-    if (cached !== undefined) {
-      return cached;
-    }
-    if (visiting.has(model.fqn)) {
-      return new Set();
-    }
-    visiting.add(model.fqn);
-    const names = new Set<string>();
-    const parents: ClassModel[] = [];
-    if (model.kind === "interface" || model.kind === "annotation") {
-      for (const type of model.interfaces) {
-        const parent = type.kind === "class" ? byFqn.get(type.name) : undefined;
-        if (parent?.kind === "interface") {
-          parents.push(parent);
-        }
-      }
-    } else if (model.superClass?.kind === "class") {
-      const parent = byFqn.get(model.superClass.name);
-      if (parent !== undefined) {
-        parents.push(parent);
-      }
-    }
-    for (const parent of parents) {
-      for (const name of visit(parent)) {
-        names.add(name);
-      }
-      for (const method of parent.methods) {
-        if (model.kind === "interface" || model.kind === "annotation" || !method.isAbstract) {
-          names.add(method.name);
-        }
-      }
-    }
-    visiting.delete(model.fqn);
-    cache.set(model.fqn, names);
-    return names;
-  };
-
-  for (const model of byFqn.values()) {
-    visit(model);
-  }
-  return cache;
-}
-
-function renderSuperOverloads(
-  model: ClassModel,
-  renderType: (type: JType) => string,
-  byFqn: ReadonlyMap<string, ClassModel>,
-  existing: Set<string>,
-): string[] {
-  const output: string[] = [];
-  const ownNames = new Set(model.methods.map((method) => method.name));
-
-  const visit = (type: JType, substitution: ReadonlyMap<string, JType>): void => {
-    if (type.kind !== "class") {
-      return;
-    }
-    const parent = byFqn.get(type.name);
-    if (parent === undefined || parent.kind !== "class") {
-      return;
-    }
-    const local = new Map(substitution);
-    parent.typeParameters.forEach((parameter, index) => {
-      const argument = type.args[index] ?? {
-        kind: "class" as const,
-        name: "java.lang.Object",
-        args: [],
-      };
-      local.set(parameter.name, substituteType(argument, substitution));
-    });
-    for (const method of parent.methods) {
-      if (!ownNames.has(method.name)) {
-        continue;
-      }
-      const line = renderMethod(substituteMethod(method, local), renderType);
-      if (!existing.has(line)) {
-        existing.add(line);
-        output.push(line);
-      }
-    }
-    for (const type of parent.interfaces) {
-      const members = collectInterfaceMembers(type, renderType, byFqn, local);
-      for (const method of members.methods) {
-        if (!ownNames.has(method.name) || existing.has(method.line)) {
-          continue;
-        }
-        existing.add(method.line);
-        output.push(method.line);
-      }
-    }
-    if (parent.superClass !== undefined) {
-      visit(parent.superClass, local);
-    }
-  };
-
-  if (model.superClass !== undefined) {
-    visit(model.superClass, new Map());
-  }
-  return output.sort((left, right) => compareStrings(left, right));
-}
-
-function presentMemberNames(model: ClassModel, inherited: ReadonlySet<string>): Set<string> {
-  const names = new Set<string>(inherited);
-  for (const field of model.fields) {
-    names.add(field.name);
-  }
-  for (const method of model.methods) {
-    names.add(method.name);
-  }
-  for (const constant of model.enumConstants) {
-    names.add(constant);
-  }
-  return names;
-}
-
-function renderInterfaceMethods(
-  model: ClassModel,
-  renderType: (type: JType) => string,
-  byFqn: ReadonlyMap<string, ClassModel>,
-  present: Set<string>,
-): string[] {
-  const methods: string[] = [];
-
-  const visit = (type: JType, substitution: ReadonlyMap<string, JType>): void => {
-    if (type.kind !== "class") {
-      return;
-    }
-    const parent = byFqn.get(type.name);
-    if (parent === undefined || (parent.kind !== "interface" && parent.kind !== "annotation")) {
-      return;
-    }
-    const local = new Map(substitution);
-    parent.typeParameters.forEach((parameter, index) => {
-      const argument = type.args[index] ?? {
-        kind: "class" as const,
-        name: "java.lang.Object",
-        args: [],
-      };
-      local.set(parameter.name, substituteType(argument, substitution));
-    });
-    const blocked = new Set(present);
-    const addedHere = new Set<string>();
-    for (const method of parent.methods) {
-      if (method.isStatic) {
-        continue;
-      }
-      const name = method.name;
-      if (method.isAbstract) {
-        if (present.has(name)) {
-          continue;
-        }
-      } else if (blocked.has(name) && !addedHere.has(name)) {
-        continue;
-      }
-      methods.push(renderMethod(substituteMethod(method, local), renderType));
-      present.add(name);
-      addedHere.add(name);
-    }
-    for (const base of parent.interfaces) {
-      visit(base, local);
-    }
-  };
-
-  for (const type of model.interfaces) {
-    visit(type, new Map());
-  }
-
-  return methods.sort((left, right) => compareStrings(left, right));
-}
-
-function substituteMethod(
-  method: MethodModel,
-  substitution: ReadonlyMap<string, JType>,
-): MethodModel {
-  const shadowed = new Set(method.typeParameters.map((parameter) => parameter.name));
-  const effective = new Map([...substitution.entries()].filter(([name]) => !shadowed.has(name)));
-  return {
-    ...method,
-    typeParameters: method.typeParameters.map((parameter) => ({
-      ...parameter,
-      bounds: parameter.bounds.map((bound) => substituteType(bound, effective)),
-    })),
-    parameters: method.parameters.map((parameter) => ({
-      ...parameter,
-      type: substituteType(parameter.type, effective),
-    })),
-    result: substituteType(method.result, effective),
-  };
-}
-
-function substituteType(type: JType, substitution: ReadonlyMap<string, JType>): JType {
-  switch (type.kind) {
-    case "typevar":
-      return substitution.get(type.name) ?? type;
-    case "array":
-      return {
-        kind: "array",
-        element: substituteType(type.element, substitution),
-      };
-    case "class":
-      return {
-        ...type,
-        args: type.args.map((argument) => substituteType(argument, substitution)),
-      };
-    case "wildcard":
-      return type.bound === undefined
-        ? type
-        : { ...type, bound: substituteType(type.bound, substitution) };
-    case "primitive":
-    case "void":
-      return type;
-  }
-}
-
-function isGeneratedInterface(type: JType, byFqn: ReadonlyMap<string, ClassModel>): boolean {
-  if (type.kind !== "class") {
-    return false;
-  }
-  return byFqn.get(type.name)?.kind === "interface";
-}
-
-function compareFields(left: FieldModel, right: FieldModel): number {
-  return compareStrings(left.name, right.name);
-}
-
-function compareMethods(left: MethodModel, right: MethodModel): number {
-  const leftKey = `${left.name}(${left.parameters
-    .map((parameter) => parameter.type.kind)
-    .join(",")})`;
-  const rightKey = `${right.name}(${right.parameters
-    .map((parameter) => parameter.type.kind)
-    .join(",")})`;
-  return compareStrings(leftKey, rightKey);
-}
-
-function primitive(name: string): string {
-  switch (name) {
-    case "boolean":
-      return "boolean";
-    case "char":
-      return "string";
-    default:
-      return "number";
-  }
-}
-
-function wrapType(type: string): string {
-  return type.includes("|") || type.includes("&") ? `(${type})` : type;
-}
-
-function arrayOf(type: string): string {
-  return type.includes("|") || type.includes("&") || type.includes("=>")
-    ? `(${type})[]`
-    : `${type}[]`;
-}
-
-function safeSegment(value: string): string {
-  if (/^[A-Za-z_$][\w$]*$/u.test(value)) {
-    return value;
-  }
-  return value.replaceAll(/[^\w$]/gu, "_");
-}
-
-function safeMember(value: string): string {
-  if (/^[A-Za-z_$][\w$]*$/u.test(value)) {
-    return value;
-  }
-  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
-}
-
-function safePath(value: string): string {
-  return value
-    .split(".")
-    .filter((segment) => segment !== "")
-    .map(safeSegment)
-    .join(".");
-}
-
-function joinDeclaration(head: string, members: ReadonlyArray<string>): string {
-  if (members.length === 0) {
-    return `${head} {}`;
-  }
-  return `${head} {\n${indent(members).join("\n")}\n}`;
-}
-
-function indent(lines: ReadonlyArray<string>): string[] {
-  return lines.map((line) =>
-    line === ""
-      ? ""
-      : line
-          .split("\n")
-          .map((part) => `  ${part}`)
-          .join("\n"),
-  );
+function sortedEntries<T>(entries: ReadonlyMap<string, T>): Array<[string, T]> {
+  return [...entries.entries()].sort(([left], [right]) => compareStrings(left, right));
 }

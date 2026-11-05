@@ -32,10 +32,19 @@ export type JType =
       readonly bound?: JType;
     };
 
+/** The class arm of `JType`, named so helpers can accept it directly. */
+export type JClassType = Extract<JType, { kind: "class" }>;
+
 export interface JTypeParameter {
   readonly name: string;
   readonly bounds: ReadonlyArray<JType>;
 }
+
+export function classType(name: string, args: ReadonlyArray<JType> = []): JClassType {
+  return { kind: "class", name, args };
+}
+
+export const OBJECT_TYPE: JClassType = classType("java.lang.Object");
 
 export interface JClassSignature {
   readonly typeParameters: ReadonlyArray<JTypeParameter>;

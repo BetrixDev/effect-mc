@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPaperApi } from "./artifact.ts";
-import { emit } from "./emit.ts";
+import { emit, type EmitResult } from "./emit.ts";
 import { readClass } from "./model.ts";
 import { loadOverlays } from "./overlays.ts";
 
@@ -10,6 +10,8 @@ const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const generatedDirectory = join(packageRoot, "generated");
 const indexPath = join(generatedDirectory, "index.d.ts");
 const manifestPath = join(generatedDirectory, "manifest.json");
+
+const MAX_WARNINGS = 20;
 
 async function main(): Promise<void> {
   const check = process.argv.includes("--check");
@@ -30,38 +32,48 @@ async function main(): Promise<void> {
     overlays,
   });
 
-  for (const warning of warnings.slice(0, 20)) {
-    process.stderr.write(`warning: ${warning}\n`);
-  }
-  if (warnings.length > 20) {
-    process.stderr.write(`warning: ${warnings.length - 20} more warnings\n`);
-  }
-
+  reportWarnings(warnings);
   if (check) {
-    let failed = false;
-    failed = differs(indexPath, result.dts) || failed;
-    failed = differs(manifestPath, result.manifest) || failed;
-    if (failed) {
-      process.stderr.write(
-        "Generated Paper types are out of date. Run `npm run generate --workspace @effectmc/paper-types`.\n",
-      );
-      process.exitCode = 1;
-    } else {
-      process.stdout.write(
-        `Paper types are reproducible (${result.classCount} classes, ${result.externalCount} external types).\n`,
-      );
-    }
+    checkGenerated(result);
   } else {
-    mkdirSync(generatedDirectory, { recursive: true });
-    writeFileSync(indexPath, result.dts);
-    writeFileSync(manifestPath, result.manifest);
+    writeGenerated(result);
     process.stdout.write(
       `Generated ${result.classCount} Paper classes (${result.externalCount} external types, ${overlays.length} overlays).\n`,
     );
   }
 }
 
-function differs(path: string, expected: string): boolean {
+function reportWarnings(warnings: ReadonlyArray<string>): void {
+  for (const warning of warnings.slice(0, MAX_WARNINGS)) {
+    process.stderr.write(`warning: ${warning}\n`);
+  }
+  if (warnings.length > MAX_WARNINGS) {
+    process.stderr.write(`warning: ${warnings.length - MAX_WARNINGS} more warnings\n`);
+  }
+}
+
+function checkGenerated(result: EmitResult): void {
+  const stale = [checkFile(indexPath, result.dts), checkFile(manifestPath, result.manifest)];
+  if (stale.some(Boolean)) {
+    process.stderr.write(
+      "Generated Paper types are out of date. Run `npm run generate --workspace @effectmc/paper-types`.\n",
+    );
+    process.exitCode = 1;
+    return;
+  }
+  process.stdout.write(
+    `Paper types are reproducible (${result.classCount} classes, ${result.externalCount} external types).\n`,
+  );
+}
+
+function writeGenerated(result: EmitResult): void {
+  mkdirSync(generatedDirectory, { recursive: true });
+  writeFileSync(indexPath, result.dts);
+  writeFileSync(manifestPath, result.manifest);
+}
+
+/** Returns true and reports the first mismatch when the file is stale. */
+function checkFile(path: string, expected: string): boolean {
   if (!existsSync(path)) {
     process.stderr.write(`missing ${path}\n`);
     return true;

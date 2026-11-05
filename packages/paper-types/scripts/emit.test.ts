@@ -35,16 +35,12 @@ function classModel(
   options: Partial<ClassModel> = {},
 ): ClassModel {
   const simpleName = fqn.slice(fqn.lastIndexOf(".") + 1);
-  const packageName = fqn.slice(0, fqn.lastIndexOf("."));
   return {
     fqn,
-    binaryName: fqn.replaceAll(".", "/"),
-    packageName,
-    namespacePath: packageName,
+    namespacePath: fqn.slice(0, fqn.lastIndexOf(".")),
     simpleName,
     kind,
     isAbstract: false,
-    isFinal: false,
     typeParameters: [],
     superClass: { kind: "class", name: "java.lang.Object", args: [] },
     interfaces: [],
@@ -57,6 +53,7 @@ function classModel(
 }
 
 const stringType: JType = { kind: "class", name: "java.lang.String", args: [] };
+const objectType: JType = { kind: "class", name: "java.lang.Object", args: [] };
 const voidType: JType = { kind: "void" };
 const baseType: JType = {
   kind: "class",
@@ -173,5 +170,130 @@ describe("emit", () => {
         overlays: [{ ...mergeOverlay, target: "org.example.Missing" }],
       }),
     ).toThrow(/not in the pinned artifact/);
+  });
+});
+
+describe("emit type shapes", () => {
+  test("maps function types and varargs parameters", () => {
+    const consumerOfString: JType = {
+      kind: "class",
+      name: "java.util.function.Consumer",
+      args: [stringType],
+    };
+    const stringArray: JType = { kind: "array", element: stringType };
+    const result = emit({
+      pin,
+      classes: [
+        classModel("org.example.Functions", "class", {
+          methods: [
+            method("accept", [consumerOfString], voidType),
+            method("join", [stringArray], stringType, { isVarargs: true }),
+          ],
+        }),
+      ],
+      overlays: [],
+    });
+
+    expect(result.dts).toContain("accept(arg0: (value: string) => void): void;");
+    expect(result.dts).toContain("join(...arg0: string[]): string;");
+  });
+
+  test("renders bounded type parameters on classes and defaulted aliases", () => {
+    const result = emit({
+      pin,
+      classes: [
+        classModel("org.example.Box", "class", {
+          typeParameters: [{ name: "T", bounds: [stringType] }],
+        }),
+      ],
+      overlays: [],
+    });
+
+    expect(result.dts).toContain("export class Box<T extends string>");
+    expect(result.dts).toContain("export type Box<T extends string = any> = org.example.Box<T>;");
+  });
+
+  test("records external arity for generic stubs", () => {
+    const opaque: JType = { kind: "class", name: "com.example.Opaque", args: [stringType] };
+    const result = emit({
+      pin,
+      classes: [
+        classModel("org.example.UsesOpaque", "class", {
+          methods: [method("opaque", [], opaque)],
+        }),
+      ],
+      overlays: [],
+    });
+
+    expect(result.dts).toContain("opaque(): __paperExternal.com.example.Opaque<string>;");
+    expect(result.dts).toContain("export interface Opaque<T0 = unknown> {}");
+  });
+});
+
+describe("emit inheritance", () => {
+  test("adds parent overloads for methods the class already declares", () => {
+    const result = emit({
+      pin,
+      classes: [
+        classModel("org.example.Parent", "class", {
+          isAbstract: true,
+          methods: [method("greet", [stringType], stringType, { isAbstract: true })],
+        }),
+        classModel("org.example.Kid", "class", {
+          superClass: { kind: "class", name: "org.example.Parent", args: [] },
+          methods: [method("greet", [objectType], stringType)],
+        }),
+      ],
+      overlays: [],
+    });
+
+    expect(result.dts).toContain("export class Kid extends org.example.Parent {");
+    expect(result.dts).toContain("greet(arg0: unknown): string;");
+    expect(result.dts).toContain("greet(arg0: string): string;");
+  });
+
+  test("copies default interface methods into an implementing class", () => {
+    const result = emit({
+      pin,
+      classes: [
+        classModel("org.example.Defaults", "interface", {
+          methods: [method("greet", [], stringType)],
+        }),
+        classModel("org.example.Impl", "class", {
+          interfaces: [{ kind: "class", name: "org.example.Defaults", args: [] }],
+        }),
+      ],
+      overlays: [],
+    });
+
+    expect(result.dts).toContain("export class Impl implements org.example.Defaults {");
+    expect(result.dts).toContain("greet(): string;");
+  });
+
+  test("extends the first base and inlines members of a conflicting base", () => {
+    const first: JType = { kind: "class", name: "org.example.First", args: [] };
+    const second: JType = { kind: "class", name: "org.example.Second", args: [] };
+    const result = emit({
+      pin,
+      classes: [
+        classModel("org.example.First", "interface", {
+          methods: [method("value", [], objectType, { isAbstract: true })],
+        }),
+        classModel("org.example.Second", "interface", {
+          methods: [
+            method("value", [], stringType, { isAbstract: true }),
+            method("other", [], stringType, { isAbstract: true }),
+          ],
+        }),
+        classModel("org.example.Combined", "interface", {
+          interfaces: [first, second],
+        }),
+      ],
+      overlays: [],
+    });
+
+    expect(result.dts).toContain("export interface Combined extends org.example.First {");
+    expect(result.dts).toContain("value(): string;");
+    expect(result.dts).toContain("other(): string;");
   });
 });

@@ -11,7 +11,9 @@ export default defineConfig({
     ],
   },
   lint: {
-    ignorePatterns: ["packages/paper-types/generated/**"],
+    // Overlays are declaration fragments that only typecheck once the
+    // generated namespace around them exists.
+    ignorePatterns: ["packages/paper-types/generated/**", "packages/paper-types/overlays/**"],
     options: {
       typeAware: true,
       typeCheck: true,
