@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "vite-plus/test";
 import { PACKAGE_NAME } from "./index";
 
 test("exports the package name", () => {

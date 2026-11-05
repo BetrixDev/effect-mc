@@ -1,5 +1,6 @@
 node_modules
 dist
+.cache
 apps/docs/.vitepress/cache
 apps/docs/.vitepress/dist
 .vitepress-dev.log
@@ -9,3 +10,4 @@ apps/docs/.vitepress/dist
 .DS_Store
 .env
 .env.local
+.vitest/

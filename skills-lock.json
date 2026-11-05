@@ -68,6 +68,12 @@
       "skillPath": "skills/engineering/setup-matt-pocock-skills/SKILL.md",
       "computedHash": "a7107058cd22442215320bb4282a7d8623aeabc7fbf9817b560c5464f34efd51"
     },
+    "thermo-nuclear-code-quality-review": {
+      "source": "cursor/plugins",
+      "sourceType": "github",
+      "skillPath": "cursor-team-kit/skills/thermo-nuclear-code-quality-review/SKILL.md",
+      "computedHash": "1be9e8126d5b4bd3000f1e654622faf1493c7df204f9460ba0c1e41e7227497f"
+    },
     "to-spec": {
       "source": "mattpocock/skills",
       "sourceType": "github",
@@ -85,6 +91,12 @@
       "sourceType": "github",
       "skillPath": "skills/engineering/triage/SKILL.md",
       "computedHash": "453a7a098edcbec2a6ef67f8aa6720433672ebdf93023c90cefa79f160c72599"
+    },
+    "visual-pr": {
+      "source": "humanlayer/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/visual-pr/skills/visual-pr/SKILL.md",
+      "computedHash": "ced256e5440e32a5424bf0e70a3a4493df1744b046d50a53c76b9b159f61f4b0"
     },
     "wayfinder": {
       "source": "mattpocock/skills",

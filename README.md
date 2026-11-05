@@ -4,12 +4,13 @@ Monorepo for EffectMC, a Paper plugin framework built on Effect.
 
 ## Layout
 
-| Path                             | Contents                                                 |
-| -------------------------------- | -------------------------------------------------------- |
-| `apps/docs/`                     | VitePress site with the design notes and plugin patterns |
-| `apps/docs/.vitepress/config.ts` | Site config, nav, and sidebar                            |
-| `packages/core/`                 | `@effectmc/core` placeholder package                     |
-| `vite.config.ts`                 | Vite+ workspace, lint, format, and pack config           |
+| Path                             | Contents                                                   |
+| -------------------------------- | ---------------------------------------------------------- |
+| `apps/docs/`                     | VitePress site with the design notes and plugin patterns   |
+| `apps/docs/.vitepress/config.ts` | Site config, nav, and sidebar                              |
+| `packages/core/`                 | `@effectmc/core` placeholder package                       |
+| `packages/paper-types/`          | Generated Paper typings, overlays, and the strict consumer |
+| `vite.config.ts`                 | Vite+ workspace, lint, format, and pack config             |
 
 ## Commands
 
