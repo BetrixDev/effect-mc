@@ -5,6 +5,8 @@ description: An iron axe projectile with a particle trail and kill credit.
 
 # Axe bolt
 
+> **Superseded.** Primary-source research in `docs/research/` contradicted several claims on this page, and `docs/adr/` records what replaced them. It is kept for context and will be rewritten when the v0 API spec lands.
+
 When a player right-clicks with an iron axe, the plugin launches a snowball bolt tagged in PDC and forks a scoped particle trail. When the bolt hits an entity, it deals lethal damage with the clicking player as the killing source (`LivingEntity.damage(amount, player)`).
 
 ```typescript

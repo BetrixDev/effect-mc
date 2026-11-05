@@ -5,6 +5,8 @@ description: Paper.offload and Paper.on.
 
 # Offload and hop
 
+> **Superseded.** Primary-source research in `docs/research/` contradicted several claims on this page, and `docs/adr/` records what replaced them. It is kept for context and will be rewritten when the v0 API spec lands.
+
 `Paper.offload` runs Java work on a pool. `Paper.on` hops onto the holder's or region's thread. JS never runs in parallel anywhere.
 
 ```typescript

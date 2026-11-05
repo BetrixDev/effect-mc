@@ -5,6 +5,8 @@ description: Main and AsyncThread capabilities, Graal Context, and SyncWindow.
 
 # Threading model
 
+> **Superseded.** Primary-source research in `docs/research/` contradicted several claims on this page, and `docs/adr/` records what replaced them. It is kept for context and will be rewritten when the v0 API spec lands.
+
 A core product goal is to make it **obvious from the types** when code runs on the main (or region) thread and when it runs asynchronously. Hop helpers alone (`Paper.on` / `Paper.offload`) don't do that, so EffectMC defines typed boundaries.
 
 ## Three separate axes

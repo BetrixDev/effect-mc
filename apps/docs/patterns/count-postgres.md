@@ -5,6 +5,8 @@ description: A persisted counter with @effect/sql-pg.
 
 # /count on Postgres
 
+> **Superseded.** Primary-source research in `docs/research/` contradicted several claims on this page, and `docs/adr/` records what replaced them. It is kept for context and will be rewritten when the v0 API spec lands.
+
 This plugin provides `/count`, `/count inc`, and `/count dec`. The counter lives in Postgres and is reached through the portable `SqlClient` API, with `PgClient.layerConfig` from `@effect/sql-pg`. SQL doesn't require `Main`. Messaging the player does.
 
 ```typescript

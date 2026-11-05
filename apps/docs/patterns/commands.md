@@ -5,6 +5,8 @@ description: A /warp go command tree.
 
 # Commands
 
+> **Superseded.** Primary-source research in `docs/research/` contradicted several claims on this page, and `docs/adr/` records what replaced them. It is kept for context and will be rewritten when the v0 API spec lands.
+
 The author surface is inspired by effect/cli and stays thin over Brigadier on Paper. `Command.permission` feeds Brigadier `requires` and a runtime re-check.
 
 ```typescript

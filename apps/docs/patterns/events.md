@@ -5,6 +5,8 @@ description: Cancel and observe with the same Stream.
 
 # Events
 
+> **Superseded.** Primary-source research in `docs/research/` contradicted several claims on this page, and `docs/adr/` records what replaced them. It is kept for context and will be rewritten when the v0 API spec lands.
+
 Cancel and observe use the same Stream. You cancel with `event.cancel` while `SyncWindow` is open.
 
 ```typescript

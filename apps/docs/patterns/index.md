@@ -5,6 +5,8 @@ description: How to read the patterns, the event and PDC models, and the contrac
 
 # EffectMC plugin patterns
 
+> **Superseded.** Primary-source research in `docs/research/` contradicted several claims on this page, and `docs/adr/` records what replaced them. It is kept for context and will be rewritten when the v0 API spec lands.
+
 ## How to read these
 
 These are illustrative TypeScript snippets against the EffectMC surface: `Plugin`, `Events.of`, `Pdc`, `@effectmc/commands`, `Paper.offload` / `Paper.on`. **The API isn't shipping yet.**

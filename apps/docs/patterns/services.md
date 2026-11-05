@@ -5,6 +5,8 @@ description: WarpService as an Effect Layer.
 
 # Services and Layers
 
+> **Superseded.** Primary-source research in `docs/research/` contradicted several claims on this page, and `docs/adr/` records what replaced them. It is kept for context and will be rewritten when the v0 API spec lands.
+
 These are Effect v4 tags and Layers. Soft dependencies add requirements to `R`, and each one's `X.layer()` satisfies it.
 
 ```typescript

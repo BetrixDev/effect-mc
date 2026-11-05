@@ -5,6 +5,8 @@ description: Context services and the seams you can mock in tests.
 
 # Services and testing seams
 
+> **Superseded.** Primary-source research in `docs/research/` contradicted several claims on this page, and `docs/adr/` records what replaced them. It is kept for context and will be rewritten when the v0 API spec lands.
+
 Every service below is an Effect Context service or Layer. Each one can be mocked by providing a replacement Layer from `@effectmc/test`, so plugin logic runs in unit tests without a Paper server.
 
 | Service | Role | Test seam |

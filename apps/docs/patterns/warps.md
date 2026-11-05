@@ -5,6 +5,8 @@ description: The v0 sample slice.
 
 # Warps/homes sample
 
+> **Superseded.** Primary-source research in `docs/research/` contradicted several claims on this page, and `docs/adr/` records what replaced them. It is kept for context and will be rewritten when the v0 API spec lands.
+
 This is the v0 sample slice. Global warps live in a service `Ref` (see [services](/patterns/services)), and each player's `/home` lives in their PDC.
 
 ```typescript

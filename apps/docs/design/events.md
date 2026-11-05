@@ -5,6 +5,8 @@ description: Events.of Streams, SyncWindow cancel, and keyed fan-out.
 
 # Events
 
+> **Superseded.** Primary-source research in `docs/research/` contradicted several claims on this page, and `docs/adr/` records what replaced them. It is kept for context and will be rewritten when the v0 API spec lands.
+
 ## One surface: Streams plus SyncWindow
 
 There's no split between `Events.on` and `Events.stream`. Authors always call `Events.of(Type)` (or the named helpers and keyed `.events`) and get an Effect `Stream`.

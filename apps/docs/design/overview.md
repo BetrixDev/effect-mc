@@ -5,6 +5,8 @@ description: Product positioning, the v0 cut, audience, prior art, and tradeoffs
 
 # Overview
 
+> **Superseded.** Primary-source research in `docs/research/` contradicted several claims on this page, and `docs/adr/` records what replaced them. It is kept for context and will be rewritten when the v0 API spec lands.
+
 ## Product
 
 **EffectMC** (effectmc.com / effectmc.dev). You write Paper plugins in TypeScript, and Effect is the kernel. The shape follows Alchemy's split between declaring and running. It is an application framework, not a thin Graal script host.

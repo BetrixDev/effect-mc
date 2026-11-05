@@ -5,6 +5,8 @@ description: The deferred @effectmc/ui design.
 
 # UI (deferred)
 
+> **Superseded.** Primary-source research in `docs/research/` contradicted several claims on this page, and `docs/adr/` records what replaced them. It is kept for context and will be rewritten when the v0 API spec lands.
+
 > **Deferred past v0.** `@effectmc/ui` is still planned, but it's off the v0 critical path.
 
 ## Planned shape

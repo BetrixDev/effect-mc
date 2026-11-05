@@ -5,6 +5,8 @@ description: Stack, packages, the GraalJS host, and the caveated reload contract
 
 # Architecture
 
+> **Superseded.** Primary-source research in `docs/research/` contradicted several claims on this page, and `docs/adr/` records what replaced them. It is kept for context and will be rewritten when the v0 API spec lands.
+
 ## Stack
 
 ```mermaid

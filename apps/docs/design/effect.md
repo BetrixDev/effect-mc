@@ -5,6 +5,8 @@ description: Effect v4 services, Layers, the tick Scheduler, errors, and observa
 
 # Effect kernel
 
+> **Superseded.** Primary-source research in `docs/research/` contradicted several claims on this page, and `docs/adr/` records what replaced them. It is kept for context and will be rewritten when the v0 API spec lands.
+
 - **Effect v4.** Services are tags, and implementations are Layers.
 - **One `ManagedRuntime` per plugin.** Disposing it is the first step of teardown.
 - **Tick Scheduler and Clock.** Graal has no event loop. The host provides an Effect Scheduler and Clock that the Paper tick pumps, and it drains promise microtasks on every tick.
