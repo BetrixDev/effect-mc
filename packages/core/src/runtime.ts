@@ -1,4 +1,5 @@
-import { Duration, Effect, Fiber, Layer, ManagedRuntime, Option, Scope } from "effect";
+import { Clock, Duration, Effect, Fiber, Layer, ManagedRuntime, Option, Scope } from "effect";
+import { TickClock } from "./clock";
 import { RuntimeStateError, type RuntimeState } from "./errors";
 import { Observability } from "./observability";
 import { type Plugin, type RuntimeServices } from "./plugin";
@@ -14,6 +15,11 @@ export interface PluginRuntimeOptions {
   readonly programTimeout?: Duration.Input;
   /** Replaces the default console observability layer. */
   readonly observability?: Layer.Layer<Observability, never, never>;
+  /**
+   * The tick clock the program reads time from. Defaults to a new clock that
+   * only moves when its host calls `advance`.
+   */
+  readonly clock?: TickClock;
 }
 
 type RuntimeContext<R> = Exclude<RuntimeServices, Scope.Scope> | R;
@@ -34,6 +40,8 @@ const isDevelopmentEnvironment = (): boolean =>
 export class PluginRuntime<R = never, E = never> {
   readonly plugin: Plugin<R, E>;
   readonly registry: RegistryService;
+  /** The clock the program reads and the host advances once per server tick. */
+  readonly clock: TickClock;
 
   private readonly development: boolean;
   private readonly programTimeout: Duration.Input;
@@ -46,6 +54,7 @@ export class PluginRuntime<R = never, E = never> {
   private constructor(plugin: Plugin<R, E>, options: PluginRuntimeOptions) {
     this.plugin = plugin;
     this.registry = makeRegistry();
+    this.clock = options.clock ?? new TickClock();
     this.development = options.development ?? isDevelopmentEnvironment();
     this.programTimeout = options.programTimeout ?? DEFAULT_PROGRAM_TIMEOUT;
     this.observability = options.observability ?? Observability.layer;
@@ -80,9 +89,11 @@ export class PluginRuntime<R = never, E = never> {
 
     this.state = "starting";
 
-    const runtimeLayer = Layer.merge(
+    const runtimeLayer = Layer.mergeAll(
       this.plugin.layer,
-      Layer.merge(Layer.succeed(Registry, this.registry), this.observability),
+      Layer.succeed(Registry, this.registry),
+      this.observability,
+      Layer.succeed(Clock.Clock, this.clock.clock),
     );
 
     try {

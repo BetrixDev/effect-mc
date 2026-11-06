@@ -1,8 +1,9 @@
 /**
  * @effectmc/core
  *
- * The plugin entry point, runtime, Registry, and observability seam.
+ * The plugin entry point, runtime, tick clock, Registry, and observability seam.
  */
+export { TICK_MILLIS, TickClock } from "./clock";
 export { isPlugin, Plugin, type RuntimeServices } from "./plugin";
 export {
   Registry,

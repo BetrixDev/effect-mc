@@ -2,7 +2,7 @@
  * Compile-time fixtures for the Plugin contract. This file is checked by
  * `tsc --noEmit`; the `@ts-expect-error` disappears if a constraint is lost.
  */
-import { Context, Effect, Layer } from "effect";
+import { Clock, Context, Effect, Layer } from "effect";
 import { Plugin } from "./plugin";
 import { Registry } from "./registry";
 
@@ -22,6 +22,18 @@ export const runtimeServices = () =>
     Effect.gen(function* () {
       const registry = yield* Registry;
       registry.add({ kind: "task", name: "sweep" });
+    }),
+  );
+
+// The runtime clock is ambient: reading or sleeping needs no extra requirement.
+export const readsRuntimeClock = () =>
+  Plugin(
+    "clock-reader",
+    Layer.empty,
+    Effect.gen(function* () {
+      const clock = yield* Clock.Clock;
+      yield* clock.currentTimeMillis;
+      yield* Effect.sleep("1 second");
     }),
   );
 
