@@ -14,8 +14,8 @@ public final class EffectMcHostPlugin extends JavaPlugin {
         boot = new HostBoot(getServer().getPluginsFolder().toPath(), getLogger());
         try {
             boot.start();
-        } catch (RuntimeException e) {
-            getLogger().log(Level.SEVERE, "EffectMC host failed to start", e);
+        } catch (Exception | LinkageError | StackOverflowError error) {
+            getLogger().log(Level.SEVERE, "EffectMC host failed to start", error);
             boot.close();
             boot = null;
             getServer().getPluginManager().disablePlugin(this);

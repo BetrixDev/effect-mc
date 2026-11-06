@@ -19,6 +19,8 @@ class HostBootTest {
     void discoversAndEvaluatesAContainerIntoTheLog() throws IOException {
         writeContainer("hello", """
                 console.log("console output from " + effectmc.name());
+                console.warn("a warning");
+                console.error("an error");
                 effectmc.log("thread=" + effectmc.threadName());
                 export default { name: "hello" };
                 """);
@@ -29,6 +31,8 @@ class HostBootTest {
 
             assertEquals(java.util.List.of("hello"), boot.loadedContainers());
             assertTrue(log.joined().contains("[hello] console output from hello"), log.joined());
+            assertTrue(log.contains(java.util.logging.Level.WARNING, "[hello] a warning"), log.joined());
+            assertTrue(log.contains(java.util.logging.Level.SEVERE, "[hello] an error"), log.joined());
             assertTrue(log.joined().contains("[hello] thread=EffectMC-hello"), log.joined());
             assertTrue(log.contains(java.util.logging.Level.INFO, "requires Java 25"), log.joined());
         }

@@ -85,4 +85,19 @@ class ContainerManifestTest {
 
         assertThrows(ContainerException.class, () -> ContainerManifest.read(directory));
     }
+
+    @Test
+    void rejectsAnEntryThatEscapesTheContainer() throws IOException {
+        Files.writeString(directory.resolve("plugin.json"), """
+                {
+                  "name": "%s",
+                  "version": "0.1.0",
+                  "entry": "../plugin.mjs"
+                }
+                """.formatted(directory.getFileName()));
+
+        ContainerException error = assertThrows(ContainerException.class, () -> ContainerManifest.read(directory));
+
+        assertTrue(error.getMessage().startsWith("Invalid entry"));
+    }
 }

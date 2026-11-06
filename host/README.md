@@ -47,8 +47,8 @@ plugins/EffectMC/hello/
 `entry` is optional and defaults to `plugin.mjs`. The manifest name must match
 the directory name and use lowercase letters, digits, `-` or `_`.
 
-`plugin.mjs` is a bundled ES module. It must default-export the plugin value and
-may write to the server log through either `console` or `effectmc`:
+`plugin.mjs` is a bundled ES module. It must default-export the `Plugin` value
+and may write to the server log through either `console` or `effectmc`:
 
 ```js
 console.log("hello from a container");
@@ -64,10 +64,15 @@ never crosses a Context boundary.
 Containers are evaluated with
 
 - `allowHostClassLookup` restricted to `allow-list.txt`, and
-- public-member access for the classes that are reachable through that list.
+- public-member access for values reachable from that list.
 
 `Java.type()` for a class outside the list throws inside JavaScript. The
-allow-list is generated from `@effectmc/paper-types`; regenerate it with:
+boundary is **which class names may be named**, not which members exist: per
+ADR-0013, public members of an allowed class and of values returned from those
+members remain reachable. Containers are trusted author artifacts, not an
+adversarial sandbox.
+
+The allow-list is generated from `@effectmc/paper-types`; regenerate it with:
 
 ```bash
 npm run generate:allow-list

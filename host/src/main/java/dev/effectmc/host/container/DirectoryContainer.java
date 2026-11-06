@@ -16,10 +16,6 @@ public final class DirectoryContainer implements Container {
         this.manifest = manifest;
     }
 
-    public Path directory() {
-        return directory;
-    }
-
     @Override
     public String name() {
         return manifest.name();
@@ -36,7 +32,7 @@ public final class DirectoryContainer implements Container {
     }
 
     @Override
-    public String moduleName() {
+    public String sourceName() {
         return name() + "/" + entry();
     }
 
@@ -47,11 +43,28 @@ public final class DirectoryContainer implements Container {
             throw new ContainerException(
                     "Entry '" + entry() + "' escapes the container directory " + directory);
         }
-        if (!Files.isRegularFile(module)) {
+
+        Path realDirectory;
+        Path realModule;
+        try {
+            realDirectory = directory.toRealPath();
+            realModule = module.toRealPath();
+        } catch (java.nio.file.NoSuchFileException e) {
+            throw new ContainerException("Missing container module " + module);
+        } catch (IOException e) {
+            throw new ContainerException("Could not resolve container module " + module + ": " + e.getMessage(), e);
+        }
+
+        if (!realModule.startsWith(realDirectory)) {
+            throw new ContainerException(
+                    "Entry '" + entry() + "' escapes the container directory " + directory);
+        }
+        if (!Files.isRegularFile(realModule)) {
             throw new ContainerException("Missing container module " + module);
         }
+
         try {
-            return Files.readString(module, StandardCharsets.UTF_8);
+            return Files.readString(realModule, StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new ContainerException("Could not read container module " + module + ": " + e.getMessage(), e);
         }

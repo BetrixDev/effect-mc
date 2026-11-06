@@ -25,6 +25,7 @@ public record ContainerManifest(String name, String version, String entry) {
 
     private static final Pattern NAME = Pattern.compile("[a-z0-9][a-z0-9_-]{0,63}");
     private static final Pattern VERSION = Pattern.compile("[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}");
+    private static final Pattern ENTRY = Pattern.compile("[A-Za-z0-9._-]{1,128}");
 
     public static ContainerManifest read(Path directory) throws ContainerException {
         Path manifestPath = directory.resolve(FILE_NAME);
@@ -58,6 +59,11 @@ public record ContainerManifest(String name, String version, String entry) {
             throw new ContainerException(
                     "Invalid container version '" + version + "' in " + manifestPath
                             + ": use letters, digits, '.', '+', '-' or '_' (maximum 64 characters)");
+        }
+        if (!ENTRY.matcher(entry).matches() || entry.equals(".") || entry.equals("..")) {
+            throw new ContainerException(
+                    "Invalid entry '" + entry + "' in " + manifestPath
+                            + ": use a plain file name inside the container directory");
         }
 
         Path directoryName = directory.getFileName();

@@ -15,6 +15,7 @@ import org.eclipse.aether.repository.RemoteRepository;
  */
 public final class GraalLibraryLoader implements PluginLoader {
 
+    // Keep in sync with graalVersion in build.gradle.kts.
     private static final String GRAAL_VERSION = "25.3.4.1";
 
     @Override

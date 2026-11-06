@@ -50,14 +50,14 @@ public final class HostBoot implements AutoCloseable {
         }
 
         for (Container container : result.containers()) {
-            PluginRuntime runtime = new PluginRuntime(container, engine, logger::info, logger);
+            PluginRuntime runtime = new PluginRuntime(container, engine, logger);
             try {
                 runtime.start();
                 runtimes.add(runtime);
-            } catch (Exception e) {
+            } catch (Exception | LinkageError | StackOverflowError error) {
                 runtime.close();
                 logger.log(Level.SEVERE,
-                        "Failed to load container '" + container.name() + "' from " + container.moduleName(), e);
+                        "Failed to load container '" + container.name() + "' from " + container.sourceName(), error);
             }
         }
 

@@ -13,7 +13,7 @@ public interface Container {
     String entry();
 
     /** The name Graal uses in stack traces and error messages. */
-    String moduleName();
+    String sourceName();
 
     /** The self-contained module source. Containers are bundled, so no imports resolve. */
     String readModule() throws ContainerException;

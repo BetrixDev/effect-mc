@@ -2,7 +2,7 @@ package dev.effectmc.host.runtime;
 
 import org.graalvm.polyglot.HostAccess;
 
-import java.util.function.Consumer;
+import java.util.logging.Logger;
 
 /**
  * The host object bound into a container's global scope as both {@code console}
@@ -12,11 +12,11 @@ import java.util.function.Consumer;
 public final class HostConsole {
 
     private final String name;
-    private final Consumer<String> sink;
+    private final Logger logger;
 
-    public HostConsole(String name, Consumer<String> sink) {
+    public HostConsole(String name, Logger logger) {
         this.name = name;
-        this.sink = sink;
+        this.logger = logger;
     }
 
     @HostAccess.Export
@@ -31,29 +31,29 @@ public final class HostConsole {
 
     @HostAccess.Export
     public void log(Object... arguments) {
-        sink.accept("[" + name + "] " + join(arguments));
+        logger.info(message(arguments));
     }
 
     @HostAccess.Export
     public void info(Object... arguments) {
-        log(arguments);
+        logger.info(message(arguments));
     }
 
     @HostAccess.Export
     public void warn(Object... arguments) {
-        log(arguments);
+        logger.warning(message(arguments));
     }
 
     @HostAccess.Export
     public void error(Object... arguments) {
-        log(arguments);
+        logger.severe(message(arguments));
     }
 
-    private static String join(Object[] arguments) {
+    private String message(Object[] arguments) {
+        StringBuilder line = new StringBuilder("[").append(name).append("] ");
         if (arguments == null || arguments.length == 0) {
-            return "";
+            return line.toString();
         }
-        StringBuilder line = new StringBuilder();
         for (int index = 0; index < arguments.length; index++) {
             if (index > 0) {
                 line.append(' ');

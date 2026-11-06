@@ -55,6 +55,8 @@ public final class ContainerDiscovery {
                 containers.add(new DirectoryContainer(candidate, manifest));
             } catch (ContainerException e) {
                 failures.add(new ContainerFailure(candidate, e.getMessage()));
+            } catch (RuntimeException e) {
+                failures.add(new ContainerFailure(candidate, "Could not read container: " + e));
             }
         }
 

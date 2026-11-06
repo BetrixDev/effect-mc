@@ -34,10 +34,15 @@ public final class HostEngine implements AutoCloseable {
         return new HostEngine(engine, allowList);
     }
 
-    public Context newContext(HostConsole console) {
+    Context newContext(HostConsole console) {
+        // ADR-0013 makes the boundary class-name based, not member based. Values
+        // returned by reachable members are therefore host objects too.
         Context context = Context.newBuilder("js")
                 .engine(engine)
                 .allowHostClassLookup(allowList::allows)
+                // ADR-0013 keeps the boundary at class names. The boolean overload
+                // exposes public members of reachable values; the 25.4 predicate
+                // overload (member filtering) remains unused.
                 .allowHostAccess(HostAccess.newBuilder()
                         .allowPublicAccess(true)
                         .build())

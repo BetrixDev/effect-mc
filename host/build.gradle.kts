@@ -8,6 +8,7 @@ group = "dev.effectmc"
 version = "0.1.0"
 
 val paperVersion = "26.3.build.230-stable"
+// Keep in sync with GRAAL_VERSION in GraalLibraryLoader.
 val graalVersion = "25.3.4.1"
 val gsonVersion = "2.13.2"
 
@@ -53,18 +54,13 @@ tasks.test {
     }
 }
 
-val configuredJavaVersion = java.toolchain.languageVersion.get().asInt()
-
-val verifyJavaToolchain = tasks.register("verifyJavaToolchain") {
-    group = "verification"
-    description = "Fails unless the build is using the Java 25 toolchain the host requires."
-
-    val languageVersion = configuredJavaVersion
-    doLast {
-        check(languageVersion >= 25) {
-            "effectmc-host requires JDK 25 or newer, but the build toolchain is Java $languageVersion."
+tasks.compileJava {
+    doFirst {
+        val compilerVersion = javaCompiler.get().metadata.languageVersion.asInt()
+        check(compilerVersion >= 25) {
+            "effectmc-host requires JDK 25 or newer, but the resolved compiler is Java $compilerVersion."
         }
-        logger.lifecycle("effectmc-host builds on Java $languageVersion.")
+        logger.lifecycle("effectmc-host compiles on Java $compilerVersion.")
     }
 }
 
@@ -76,7 +72,7 @@ val verifyHostJar = tasks.register("verifyHostJar") {
     inputs.file(archive)
 
     doLast {
-        val forbiddenPrefixes = listOf("org/graalvm/", "com/oracle/truffle/")
+        val forbiddenPrefixes = listOf("org/graalvm/", "com/oracle/")
         val leaked = ZipFile(archive.get().asFile).use { zip ->
             zip.entries().asSequence()
                 .map { it.name }
@@ -91,7 +87,7 @@ val verifyHostJar = tasks.register("verifyHostJar") {
 }
 
 tasks.check {
-    dependsOn(verifyJavaToolchain, verifyHostJar)
+    dependsOn(verifyHostJar)
 }
 
 val generateAllowList = tasks.register<Exec>("generateAllowList") {
