@@ -1,6 +1,7 @@
 # @effectmc/core
 
-The plugin entry point, runtime, Registry, and observability seam.
+The plugin entry point, runtime, tick-driven clock, Registry, and observability
+seam.
 
 A plugin module default-exports one declarative value (ADR-0001):
 
@@ -24,9 +25,11 @@ attach work alive in a runtime-owned scope. Tear it down with `dispose()`: it
 closes the scope, empties the Registry, and disposes the Layer runtime.
 Disposal is terminal, so a reload constructs a new `PluginRuntime`.
 
-Plugin time comes from a `TickClock`. One tick is 50 ms, and time moves only
-when the host calls `runtime.clock.advance()`; nothing reads wall time or
-installs a timer. A paused or stopped server simply stops advancing, so
+Plugin time comes from a `TickClock`. One tick is 50 ms, and the clock is
+anchored at construction and then moves only when the host calls `advance()`; it
+never follows the system clock or installs a timer. A host creates one clock,
+passes it to each runtime through `PluginRuntimeOptions.clock`, and advances it
+once per server tick. A paused or stopped server simply stops advancing, so
 `Effect.sleep`, schedules, and timeouts freeze with it. Tests advance the same
 clock explicitly instead of waiting.
 

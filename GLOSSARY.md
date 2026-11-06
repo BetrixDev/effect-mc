@@ -33,7 +33,7 @@ EffectMC's domain language, repo-wide. Terms land here when a decision turns on 
 ## Toolchain
 
 - **host jar** — `effectmc-host.jar`, the only Paper plugin. Installed once, owns Graal, the tick pump, and the Registry.
-- **tick clock** — plugin time. It advances only when the host pumps a tick, so `Effect.sleep`, schedules, and timeouts freeze while the server is paused or stopped. It never reads wall time and never installs a timer.
+- **tick clock** — plugin time. It is anchored to server boot time and advances only when the host pumps a tick, so `Effect.sleep`, schedules, and timeouts freeze while the server is paused or stopped. It never follows the system clock after that and never installs a timer.
 - **container** — an author plugin's artifact: `plugin.json` plus `plugin.mjs`. A loose directory during development, a packed `.jar` for distribution. Lives under `plugins/EffectMC/<name>/`, which Paper never scans (ADR-0015).
 - **dev loop** — `effectmc dev`: bundle, write the container, then trigger the host's scoped reload. Managed server by default, `--server <dir>` to attach (ADR-0016).
 - **scoped reload** — `/effectmc reload <name>` over RCON. Rebuilds one plugin's Context; not module-level hot reload (ADR-0017).

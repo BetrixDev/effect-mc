@@ -3,13 +3,8 @@ import { Clock, Duration, Effect, Option } from "effect";
 /** How long one server tick lasts, in milliseconds. Paper runs at 20 TPS. */
 export const TICK_MILLIS = 50;
 
-/** How many server ticks make up one second. */
-export const TICKS_PER_SECOND = 1000 / TICK_MILLIS;
-
-export interface TickClockOptions {
-  /** Length of one tick in milliseconds. Defaults to {@link TICK_MILLIS}. */
-  readonly millisPerTick?: number;
-}
+const NANOS_PER_MILLI = 1_000_000n;
+const NANOS_PER_TICK = BigInt(TICK_MILLIS) * NANOS_PER_MILLI;
 
 interface Sleeper {
   readonly deadlineNanos: bigint;
@@ -17,10 +12,11 @@ interface Sleeper {
 }
 
 /**
- * Server time for plugin programs. The clock starts at tick zero and moves
- * only when the host calls {@link TickClock.advance}; it never reads wall time
- * and never installs a timer. A stopped or paused server simply stops calling
- * `advance`, so plugin time stops with it.
+ * Server time for plugin programs. The clock is anchored to the server's boot
+ * time and then moves only when the host calls {@link TickClock.advance}; it
+ * never follows the system clock after that and never installs a timer. A
+ * stopped or paused server simply stops calling `advance`, so plugin time stops
+ * with it.
  *
  * The runtime provides {@link TickClock.clock} to a plugin program, which makes
  * `Effect.sleep`, schedules, and every other Effect time operation tick-driven.
@@ -28,44 +24,34 @@ interface Sleeper {
  * directly.
  */
 export class TickClock {
-  private readonly nanosPerTick: bigint;
+  private readonly originMillis = Date.now();
   private readonly sleepers = new Set<Sleeper>();
   private currentTicks = 0;
 
   /** The Effect `Clock` that reads this tick clock. */
-  readonly clock: Clock.Clock;
+  readonly clock: Clock.Clock = {
+    currentTimeMillisUnsafe: () => this.currentTimeMillis,
+    currentTimeMillis: Effect.sync(() => this.currentTimeMillis),
+    currentTimeNanosUnsafe: () => this.currentTimeNanos,
+    currentTimeNanos: Effect.sync(() => this.currentTimeNanos),
+    monotonicTimeNanosUnsafe: () => this.monotonicTimeNanos,
+    monotonicTimeNanos: Effect.sync(() => this.monotonicTimeNanos),
+    sleep: (duration) => this.sleep(duration),
+  };
 
-  constructor(options: TickClockOptions = {}) {
-    const millisPerTick = options.millisPerTick ?? TICK_MILLIS;
-    if (!Number.isFinite(millisPerTick) || millisPerTick <= 0) {
-      throw new RangeError("Tick length must be a finite, positive number of milliseconds");
-    }
-
-    this.nanosPerTick = BigInt(Math.round(millisPerTick * 1_000_000));
-    this.clock = {
-      currentTimeMillisUnsafe: () => this.currentTimeMillis,
-      currentTimeMillis: Effect.sync(() => this.currentTimeMillis),
-      currentTimeNanosUnsafe: () => this.currentTimeNanos,
-      currentTimeNanos: Effect.sync(() => this.currentTimeNanos),
-      monotonicTimeNanosUnsafe: () => this.currentTimeNanos,
-      monotonicTimeNanos: Effect.sync(() => this.currentTimeNanos),
-      sleep: (duration) => this.sleep(duration),
-    };
-  }
-
-  /** Ticks elapsed since the clock was created. */
-  get ticks(): number {
-    return this.currentTicks;
-  }
-
-  /** Current plugin wall time in milliseconds, measured from tick zero. */
+  /** Current Unix time in milliseconds, frozen between server ticks. */
   get currentTimeMillis(): number {
-    return Number(this.currentTimeNanos) / 1_000_000;
+    return this.originMillis + this.currentTicks * TICK_MILLIS;
   }
 
-  /** Current plugin time in nanoseconds, measured from tick zero. */
+  /** Current Unix time in nanoseconds, frozen between server ticks. */
   get currentTimeNanos(): bigint {
-    return BigInt(this.currentTicks) * this.nanosPerTick;
+    return BigInt(this.currentTimeMillis) * NANOS_PER_MILLI;
+  }
+
+  /** Time elapsed since this clock was created, in nanoseconds. */
+  get monotonicTimeNanos(): bigint {
+    return BigInt(this.currentTicks) * NANOS_PER_TICK;
   }
 
   /**
@@ -76,15 +62,16 @@ export class TickClock {
     if (!Number.isInteger(ticks) || ticks < 0) {
       throw new RangeError("Tick advance must be a non-negative integer");
     }
-
-    for (let elapsed = 0; elapsed < ticks; elapsed++) {
-      this.currentTicks += 1;
-      this.wakeDueSleepers();
+    if (ticks === 0) {
+      return;
     }
+
+    this.currentTicks += ticks;
+    this.wakeDueSleepers();
   }
 
   private wakeDueSleepers(): void {
-    const now = this.currentTimeNanos;
+    const now = this.monotonicTimeNanos;
     for (const sleeper of this.sleepers) {
       if (sleeper.deadlineNanos <= now) {
         this.sleepers.delete(sleeper);
@@ -102,7 +89,7 @@ export class TickClock {
       return Effect.void;
     }
 
-    const deadlineNanos = this.currentTimeNanos + nanos.value;
+    const deadlineNanos = this.monotonicTimeNanos + nanos.value;
     return Effect.callback<void>((resume) => {
       const sleeper: Sleeper = {
         deadlineNanos,

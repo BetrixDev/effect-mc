@@ -89,12 +89,11 @@ export class PluginRuntime<R = never, E = never> {
 
     this.state = "starting";
 
-    const runtimeLayer = Layer.merge(
+    const runtimeLayer = Layer.mergeAll(
       this.plugin.layer,
-      Layer.merge(
-        Layer.merge(Layer.succeed(Registry, this.registry), this.observability),
-        Layer.succeed(Clock.Clock, this.clock.clock),
-      ),
+      Layer.succeed(Registry, this.registry),
+      this.observability,
+      Layer.succeed(Clock.Clock, this.clock.clock),
     );
 
     try {
