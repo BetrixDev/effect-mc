@@ -4,14 +4,14 @@ Monorepo for EffectMC, a Paper plugin framework built on Effect.
 
 ## Layout
 
-| Path                             | Contents                                                   |
-| -------------------------------- | ---------------------------------------------------------- |
-| `apps/docs/`                     | VitePress site with the design notes and plugin patterns   |
-| `apps/docs/.vitepress/config.ts` | Site config, nav, and sidebar                              |
+| Path                             | Contents                                                         |
+| -------------------------------- | ---------------------------------------------------------------- |
+| `apps/docs/`                     | VitePress site with the design notes and plugin patterns         |
+| `apps/docs/.vitepress/config.ts` | Site config, nav, and sidebar                                    |
 | `host/`                          | `effectmc-host`, the Java Paper plugin that evaluates containers |
-| `packages/core/`                 | `@effectmc/core` placeholder package                       |
-| `packages/paper-types/`          | Generated Paper typings, overlays, and the strict consumer |
-| `vite.config.ts`                 | Vite+ workspace, lint, format, and pack config             |
+| `packages/core/`                 | `@effectmc/core`: plugin entry, runtime, and Registry            |
+| `packages/paper-types/`          | Generated Paper typings, overlays, and the strict consumer       |
+| `vite.config.ts`                 | Vite+ workspace, lint, format, and pack config                   |
 
 ## Commands
 
@@ -52,9 +52,9 @@ Internal links are absolute and clean, for example `/design/threading`.
 
 ## `@effectmc/core`
 
-`packages/core` is intentionally a placeholder. It exports a package-name
-constant so the workspace resolves and packs, and it will grow the v0 core
-surface described in `apps/docs/design/`.
+`packages/core` holds the `Plugin` entry point, `PluginRuntime`, the teardown
+Registry, and the swappable observability layer. It will grow the rest of the
+v0 core surface described in `docs/adr/`.
 
 Build or test it directly with:
 
