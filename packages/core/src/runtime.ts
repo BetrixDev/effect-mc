@@ -1,13 +1,13 @@
-import { Cause, Duration, Effect, Exit, Layer, ManagedRuntime, Option, Scope } from "effect";
+import { Cause, Duration, Effect, Exit, Fiber, Layer, ManagedRuntime, Option, Scope } from "effect";
 import { RuntimeStateError, type RuntimeState } from "./errors";
 import { Observability } from "./observability";
-import type { Plugin } from "./plugin";
-import { makeRegistry, type RegistryService, Registry, registryLayer } from "./registry";
+import { type Plugin, type RuntimeServices } from "./plugin";
+import { makeRegistry, type RegistryService, Registry } from "./registry";
 
 export interface PluginRuntimeOptions {
   /**
-   * Development runtimes bound the program and warn when it does not finish.
-   * Defaults to `NODE_ENV !== "production"`.
+   * Development runtimes watch for a program that does not complete and warn.
+   * Defaults to `NODE_ENV` being `development` or `test`; hosts may opt in.
    */
   readonly development?: boolean;
   /** How long a development runtime waits before warning. Default: 5 seconds. */
@@ -16,7 +16,7 @@ export interface PluginRuntimeOptions {
   readonly observability?: Layer.Layer<Observability, never, never>;
 }
 
-type RuntimeContext<R> = R | Registry | Observability;
+type RuntimeContext<R> = Exclude<RuntimeServices, Scope.Scope> | R;
 
 const DEFAULT_PROGRAM_TIMEOUT: Duration.Input = "5 seconds";
 
@@ -26,7 +26,8 @@ const isDevelopmentEnvironment = (): boolean => {
       readonly process?: { readonly env?: Record<string, string | undefined> };
     }
   ).process;
-  return runtimeProcess?.env?.NODE_ENV !== "production";
+  const environment = runtimeProcess?.env?.NODE_ENV;
+  return environment === "development" || environment === "test";
 };
 
 /**
@@ -47,8 +48,8 @@ export class PluginRuntime<R = never, E = never> {
 
   private managed: ManagedRuntime.ManagedRuntime<RuntimeContext<R>, E> | undefined;
   private state: RuntimeState = "idle";
-  private disposal: Promise<void> | undefined;
-  private resourcesDisposed = false;
+  private disposePromise: Promise<void> | undefined;
+  private cleanedUp = false;
 
   private constructor(plugin: Plugin<R, E>, options: PluginRuntimeOptions) {
     this.plugin = plugin;
@@ -74,7 +75,8 @@ export class PluginRuntime<R = never, E = never> {
   /**
    * Builds the runtime, runs the program to completion, and leaves attach
    * fibers alive in the runtime scope. A development runtime warns instead of
-   * hanging when the program never completes.
+   * hanging when the program never completes; the program keeps running so
+   * late registrations are not silently lost.
    */
   async start(): Promise<void> {
     if (this.state !== "idle") {
@@ -88,20 +90,24 @@ export class PluginRuntime<R = never, E = never> {
       });
     }
 
-    this.state = "starting";
+    this.setState("starting");
 
     const runtimeLayer = Layer.merge(
       this.plugin.layer,
-      Layer.merge(registryLayer(this.registry), this.observability),
+      Layer.merge(Layer.succeed(Registry, this.registry), this.observability),
     );
 
     try {
       const managed = ManagedRuntime.make(runtimeLayer);
       this.managed = managed;
       await managed.runPromise(this.startEffect());
-      this.state = "running";
+      if (!this.disposed) {
+        this.setState("running");
+      }
     } catch (error) {
-      this.state = "failed";
+      if (!this.disposed) {
+        this.setState("failed");
+      }
       await this.disposeResources().catch(() => undefined);
       throw error;
     }
@@ -112,54 +118,52 @@ export class PluginRuntime<R = never, E = never> {
    * runtime. Calling it again is a no-op; the runtime never starts again.
    */
   dispose(): Promise<void> {
-    if (this.disposal !== undefined) {
-      return this.disposal;
+    if (this.disposePromise !== undefined) {
+      return this.disposePromise;
     }
     if (this.state === "disposed") {
       return Promise.resolve();
     }
-    if (this.state === "starting") {
-      return Promise.reject(
-        new RuntimeStateError({
-          plugin: this.plugin.name,
-          state: this.state,
-          message: `Plugin '${this.plugin.name}' runtime cannot be disposed while it is starting`,
-        }),
-      );
-    }
 
-    this.state = "disposed";
-    this.disposal = this.disposeResources();
-    return this.disposal;
+    this.setState("disposed");
+    this.disposePromise = this.disposeResources();
+    return this.disposePromise;
+  }
+
+  private setState(state: RuntimeState): void {
+    this.state = state;
   }
 
   private startEffect(): Effect.Effect<void, E, RuntimeContext<R>> {
-    const program = Scope.provide(this.scope)(this.plugin.program);
+    const { development, plugin, programTimeout } = this;
 
-    if (!this.development) {
-      return program;
-    }
+    const runProgram = Effect.gen(function* () {
+      const fiber = yield* Effect.forkScoped(plugin.program);
 
-    return program.pipe(
-      Effect.timeoutOption(this.programTimeout),
-      Effect.flatMap((result) =>
-        Option.isNone(result)
-          ? Observability.use((observability) =>
-              observability.log(
-                "warning",
-                `Plugin '${this.plugin.name}' program did not complete; a program must be finite.`,
-              ),
-            ).pipe(Effect.asVoid)
-          : Effect.void,
-      ),
-    );
+      if (!development) {
+        yield* Fiber.join(fiber);
+        return;
+      }
+
+      const result = yield* Fiber.join(fiber).pipe(Effect.timeoutOption(programTimeout));
+      if (Option.isNone(result)) {
+        yield* Observability.use((observability) =>
+          observability.log(
+            "warning",
+            `Plugin '${plugin.name}' program did not complete; a program must be finite.`,
+          ),
+        );
+      }
+    });
+
+    return Scope.provide(this.scope)(runProgram);
   }
 
   private async disposeResources(): Promise<void> {
-    if (this.resourcesDisposed) {
+    if (this.cleanedUp) {
       return;
     }
-    this.resourcesDisposed = true;
+    this.cleanedUp = true;
 
     const closeExit = await Effect.runPromiseExit(Scope.close(this.scope, Exit.void));
     this.registry.clear();

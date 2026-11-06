@@ -22,6 +22,9 @@ export interface Plugin<R = never, E = never> {
   readonly program: Effect.Effect<void, E, R | RuntimeServices>;
 }
 
+const isValidName = (name: unknown): name is string =>
+  typeof name === "string" && name.trim().length > 0;
+
 /**
  * Declares a plugin: a name, one Layer, and a finite program.
  *
@@ -33,7 +36,7 @@ export function Plugin<R = never, LayerError = never, ProgramError = never>(
   layer: Layer.Layer<R, LayerError, never>,
   program: Effect.Effect<void, ProgramError, R | RuntimeServices>,
 ): Plugin<R, LayerError | ProgramError> {
-  if (typeof name !== "string" || name.trim().length === 0) {
+  if (!isValidName(name)) {
     throw new TypeError("Plugin name must be a non-empty string");
   }
 
@@ -48,8 +51,7 @@ export function isPlugin(value: unknown): value is Plugin<never, never> {
 
   const candidate = value as Partial<Plugin<never, never>>;
   return (
-    typeof candidate.name === "string" &&
-    candidate.name.length > 0 &&
+    isValidName(candidate.name) &&
     Layer.isLayer(candidate.layer) &&
     Effect.isEffect(candidate.program)
   );

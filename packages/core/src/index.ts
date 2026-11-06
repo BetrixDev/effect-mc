@@ -7,7 +7,6 @@ export { isPlugin, Plugin, type RuntimeServices } from "./plugin";
 export {
   makeRegistry,
   Registry,
-  registryLayer,
   type Registration,
   type RegistrationKind,
   type RegistryService,

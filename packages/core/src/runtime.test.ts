@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Deferred, Effect, Layer } from "effect";
 import { expect, test } from "vite-plus/test";
 import { RuntimeStateError } from "./errors";
 import { Observability, type ObservabilityLevel } from "./observability";
@@ -8,11 +8,16 @@ import { PluginRuntime, type PluginRuntimeOptions } from "./runtime";
 
 class Greeting extends Context.Service<Greeting, { readonly text: string }>()("Greeting") {}
 
+interface LogRecord {
+  readonly level: ObservabilityLevel;
+  readonly message: string;
+}
+
 const silentObservability = Layer.succeed(Observability, {
   log: () => Effect.void,
 });
 
-const recordingObservability = (logs: Array<{ level: ObservabilityLevel; message: string }>) =>
+const recordingObservability = (logs: Array<LogRecord>) =>
   Layer.succeed(Observability, {
     log: (level, message) => Effect.sync(() => logs.push({ level, message })),
   });
@@ -30,7 +35,7 @@ test("runs the program to completion and records what it attached", async () => 
     Effect.gen(function* () {
       const greeting = yield* Greeting;
       const registry = yield* Registry;
-      registry.add({ kind: "command", name: greeting.text });
+      registry.add({ kind: "task", name: greeting.text });
     }),
   );
 
@@ -38,7 +43,7 @@ test("runs the program to completion and records what it attached", async () => 
   await runtime.start();
 
   expect(runtime.status).toBe("running");
-  expect(runtime.registry.entries()).toEqual([{ kind: "command", name: "hello" }]);
+  expect(runtime.registry.entries()).toEqual([{ kind: "task", name: "hello" }]);
 
   await runtime.dispose();
 
@@ -75,10 +80,19 @@ test("keeps scoped attach work alive until teardown interrupts it", async () => 
   expect(interrupted).toBe(true);
 });
 
-test("warns in development when the program does not complete", async () => {
-  const logs: Array<{ level: ObservabilityLevel; message: string }> = [];
+test("warns in development without interrupting a program that outlives the warning window", async () => {
+  const logs: Array<LogRecord> = [];
+  const gate = Deferred.makeUnsafe<void>();
   const runtime = PluginRuntime.make(
-    Plugin("stuck", Layer.empty, Effect.never),
+    Plugin(
+      "slow",
+      Layer.empty,
+      Effect.gen(function* () {
+        yield* Deferred.await(gate);
+        const registry = yield* Registry;
+        registry.add({ kind: "task", name: "late" });
+      }),
+    ),
     options({
       development: true,
       programTimeout: "10 millis",
@@ -91,14 +105,20 @@ test("warns in development when the program does not complete", async () => {
   expect(runtime.status).toBe("running");
   expect(logs).toHaveLength(1);
   expect(logs[0]?.level).toBe("warning");
-  expect(logs[0]?.message).toContain("stuck");
+  expect(logs[0]?.message).toContain("slow");
   expect(logs[0]?.message).toContain("did not complete");
+  expect(runtime.registry.entries()).toEqual([]);
+
+  Deferred.doneUnsafe(gate, Effect.void);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  expect(runtime.registry.entries()).toEqual([{ kind: "task", name: "late" }]);
 
   await runtime.dispose();
 });
 
 test("does not warn in development when the program completes", async () => {
-  const logs: Array<{ level: ObservabilityLevel; message: string }> = [];
+  const logs: Array<LogRecord> = [];
   const runtime = PluginRuntime.make(
     Plugin("quick", Layer.empty, Effect.void),
     options({
@@ -163,22 +183,24 @@ test("disposal is terminal and a restart constructs a new runtime", async () => 
   await restarted.dispose();
 });
 
-test("refuses to dispose while the program is still starting", async () => {
-  const runtime = PluginRuntime.make(Plugin("demo", Layer.empty, Effect.void), options());
+test("can dispose a runtime whose program is still starting", async () => {
+  const runtime = PluginRuntime.make(
+    Plugin("stuck", Layer.empty, Effect.never),
+    options({ development: true, programTimeout: "10 seconds" }),
+  );
 
   const starting = runtime.start();
+  const disposal = runtime.dispose();
 
-  await expect(runtime.dispose()).rejects.toMatchObject({
-    _tag: "RuntimeStateError",
-    state: "starting",
-  });
+  await starting.catch(() => undefined);
+  await disposal;
 
-  await starting;
-  await runtime.dispose();
+  expect(runtime.status).toBe("disposed");
+  expect(runtime.registry.entries()).toEqual([]);
 });
 
 test("provides the swappable observability layer to the program", async () => {
-  const logs: Array<{ level: ObservabilityLevel; message: string }> = [];
+  const logs: Array<LogRecord> = [];
   const runtime = PluginRuntime.make(
     Plugin(
       "demo",

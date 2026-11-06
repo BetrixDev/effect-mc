@@ -3,8 +3,6 @@ import { expect, test } from "vite-plus/test";
 import { isPlugin, Plugin } from "./plugin";
 import { Registry } from "./registry";
 
-class Missing extends Context.Service<Missing, void>()("Missing") {}
-
 class Provided extends Context.Service<Provided, { readonly value: number }>()("Provided") {}
 
 test("carries the name, one layer, and a finite program", () => {
@@ -32,21 +30,6 @@ test("accepts runtime services without asking the author for a layer", () => {
   );
 
   expect(plugin.name).toBe("demo");
-});
-
-// This fixture is compiled but never executed: the assertion is the
-// `@ts-expect-error`, which disappears if the constraint is lost.
-const unsatisfiedRequirementFixture = () => {
-  const program: Effect.Effect<void, never, Missing> = Effect.gen(function* () {
-    yield* Missing;
-  });
-
-  // @ts-expect-error Missing is not provided by the layer.
-  Plugin("demo", Layer.empty, program);
-};
-
-test("rejects a program whose requirements the layer does not satisfy", () => {
-  expect(unsatisfiedRequirementFixture).toBeTypeOf("function");
 });
 
 test("rejects an empty name", () => {

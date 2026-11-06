@@ -3,15 +3,14 @@ import { makeRegistry } from "./registry";
 
 test("records, removes, and empties registrations", () => {
   const registry = makeRegistry();
-  const event = registry.add({ kind: "event", name: "BlockBreakEvent" });
-  const task = registry.add({ kind: "task", name: "sweep" });
+  const listener = { kind: "listener", name: "BlockBreakEvent" } as const;
+  const task = { kind: "task", name: "sweep" } as const;
+  registry.add(listener);
+  registry.add(task);
 
-  expect(registry.entries()).toEqual([
-    { kind: "event", name: "BlockBreakEvent" },
-    { kind: "task", name: "sweep" },
-  ]);
+  expect(registry.entries()).toEqual([listener, task]);
 
-  registry.remove(event);
+  registry.remove(listener);
   expect(registry.entries()).toEqual([task]);
 
   registry.clear();
@@ -20,10 +19,10 @@ test("records, removes, and empties registrations", () => {
 
 test("returns a snapshot rather than the live record", () => {
   const registry = makeRegistry();
-  registry.add({ kind: "command", name: "warp" });
+  registry.add({ kind: "task", name: "warp" });
 
   const entries = registry.entries();
   (entries as Array<unknown>).length = 0;
 
-  expect(registry.entries()).toEqual([{ kind: "command", name: "warp" }]);
+  expect(registry.entries()).toEqual([{ kind: "task", name: "warp" }]);
 });

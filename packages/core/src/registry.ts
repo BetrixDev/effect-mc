@@ -1,11 +1,11 @@
-import { Context, Layer } from "effect";
+import { Context } from "effect";
 
 /**
- * The surfaces that can attach something for a plugin's lifetime. Commands are
- * recorded for inspection even though the platform provides no way to
- * unregister them (ADR-0011).
+ * The surfaces the Registry records: listeners, scheduled tasks, and open GUI
+ * resources. Commands are absent because the platform cannot unregister them
+ * (ADR-0011); they are re-registered on reload instead.
  */
-export type RegistrationKind = "command" | "event" | "gui" | "permission" | "task";
+export type RegistrationKind = "gui" | "listener" | "task";
 
 /**
  * One entry in the Registry. The Registry records what a plugin attached; it
@@ -13,12 +13,12 @@ export type RegistrationKind = "command" | "event" | "gui" | "permission" | "tas
  */
 export interface Registration {
   readonly kind: RegistrationKind;
-  readonly name?: string;
+  readonly name: string;
 }
 
 export interface RegistryService {
-  /** Records an attachment and returns the same entry for convenience. */
-  readonly add: (registration: Registration) => Registration;
+  /** Records an attachment. */
+  readonly add: (registration: Registration) => void;
   /** Removes an entry by identity. Detaching is the caller's job. */
   readonly remove: (registration: Registration) => void;
   readonly entries: () => ReadonlyArray<Registration>;
@@ -39,7 +39,6 @@ export const makeRegistry = (): RegistryService => {
   return {
     add: (registration) => {
       registrations.push(registration);
-      return registration;
     },
     remove: (registration) => {
       const index = registrations.indexOf(registration);
@@ -53,6 +52,3 @@ export const makeRegistry = (): RegistryService => {
     },
   };
 };
-
-export const registryLayer = (registry: RegistryService): Layer.Layer<Registry> =>
-  Layer.succeed(Registry, registry);

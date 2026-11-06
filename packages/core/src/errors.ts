@@ -1,18 +1,19 @@
 import { Schema } from "effect";
 
-export type RuntimeState = "idle" | "starting" | "running" | "failed" | "disposed";
+export const runtimeStates = ["idle", "starting", "running", "failed", "disposed"] as const;
+
+export type RuntimeState = (typeof runtimeStates)[number];
 
 /**
- * Raised when the runtime is asked to start in a state other than `idle`, or
- * to dispose while it is still starting. A disposed runtime is terminal: a
- * restart means constructing a new `PluginRuntime` (ADR-0002, `ManagedRuntime`
- * disposal is terminal).
+ * Raised when the runtime is asked to start in a state other than `idle`.
+ * Disposal is terminal: the runtime never starts again, and a restart
+ * constructs a new `PluginRuntime`.
  */
 export class RuntimeStateError extends Schema.TaggedError<RuntimeStateError>()(
   "RuntimeStateError",
   {
     plugin: Schema.String,
-    state: Schema.Literals(["idle", "starting", "running", "failed", "disposed"]),
+    state: Schema.Literals(runtimeStates),
     message: Schema.String,
   },
 ) {}
