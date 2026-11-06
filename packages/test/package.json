@@ -1,0 +1,30 @@
+{
+  "name": "@effectmc/test",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Fake layers and a harness for running EffectMC plugin programs without a Paper server.",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "build": "vp pack",
+    "test": "vp test"
+  },
+  "dependencies": {
+    "@effectmc/core": "0.0.0",
+    "effect": "4.1.2"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vite-plus": "1.5.0"
+  }
+}

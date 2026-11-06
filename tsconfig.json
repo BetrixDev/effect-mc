@@ -7,7 +7,11 @@
     "skipLibCheck": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@effectmc/core": ["./packages/core/src/index.ts"],
+      "@effectmc/test": ["./packages/test/src/index.ts"]
+    }
   },
   "include": [
     "apps/docs/.vitepress/**/*.ts",

@@ -5,7 +5,9 @@ import { Context } from "effect";
  * resources. Commands are absent because the platform cannot unregister them
  * (ADR-0011); they are re-registered on reload instead.
  */
-export type RegistrationKind = "gui" | "listener" | "task";
+export const registrationKinds = ["gui", "listener", "task"] as const;
+
+export type RegistrationKind = (typeof registrationKinds)[number];
 
 /**
  * One entry in the Registry. The Registry records what a plugin attached; it

@@ -28,6 +28,11 @@ export interface PluginRuntimeOptions {
    */
   readonly clock?: TickClock;
   /**
+   * Replaces the Registry the runtime publishes. Tests supply an inspectable
+   * one; hosts normally let the runtime create it.
+   */
+  readonly registry?: RegistryService;
+  /**
    * The hop seam behind `Paper.on`. Defaults to running the work inline;
    * the Paper host should schedule it on the server thread.
    */
@@ -68,7 +73,7 @@ export class PluginRuntime<R = never, E = never> {
 
   private constructor(plugin: Plugin<R, E>, options: PluginRuntimeOptions) {
     this.plugin = plugin;
-    this.registry = makeRegistry();
+    this.registry = options.registry ?? makeRegistry();
     this.clock = options.clock ?? new TickClock();
     this.development = options.development ?? isDevelopmentEnvironment();
     this.eventBus = options.eventBus ?? makeEventBus({ development: this.development });

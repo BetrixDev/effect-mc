@@ -1,7 +1,16 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   defaultPackage: { pack: "./packages/core" },
+  test: {
+    // Tests run against workspace source, so a package does not need a build
+    // before another package's tests can import it.
+    alias: {
+      "@effectmc/core": fileURLToPath(new URL("./packages/core/src/index.ts", import.meta.url)),
+      "@effectmc/test": fileURLToPath(new URL("./packages/test/src/index.ts", import.meta.url)),
+    },
+  },
   fmt: {
     ignorePatterns: [
       "apps/docs/**/*.md",

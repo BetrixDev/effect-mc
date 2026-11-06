@@ -4,7 +4,7 @@ import { TICK_MILLIS, TickClock } from "./clock";
 import { RuntimeStateError } from "./errors";
 import { Observability, type ObservabilityLevel } from "./observability";
 import { Plugin } from "./plugin";
-import { Registry } from "./registry";
+import { makeRegistry, Registry } from "./registry";
 import { PluginRuntime, type PluginRuntimeOptions } from "./runtime";
 
 class Greeting extends Context.Service<Greeting, { readonly text: string }>()("Greeting") {}
@@ -285,6 +285,30 @@ test("can dispose a runtime whose program is still starting", async () => {
 
   expect(runtime.status).toBe("disposed");
   expect(runtime.registry.entries()).toEqual([]);
+});
+
+test("accepts a host-provided registry and exposes the same instance", async () => {
+  const registry = makeRegistry();
+  const runtime = PluginRuntime.make(
+    Plugin(
+      "demo",
+      Layer.empty,
+      Effect.gen(function* () {
+        const current = yield* Registry;
+        current.add({ kind: "task", name: "sweep" });
+      }),
+    ),
+    options({ registry }),
+  );
+
+  await runtime.start();
+
+  expect(runtime.registry).toBe(registry);
+  expect(registry.entries()).toEqual([{ kind: "task", name: "sweep" }]);
+
+  await runtime.dispose();
+
+  expect(registry.entries()).toEqual([]);
 });
 
 test("provides the swappable observability layer to the program", async () => {

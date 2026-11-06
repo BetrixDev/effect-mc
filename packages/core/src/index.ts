@@ -19,6 +19,7 @@ export {
   EventBus,
   eventModes,
   eventPriorities,
+  makeEventBus,
   type CancellableEvent,
   type EventBusService,
   type EventClass,
@@ -39,6 +40,8 @@ export {
 } from "./threads";
 export { Paper } from "./paper";
 export {
+  makeRegistry,
+  registrationKinds,
   Registry,
   type Registration,
   type RegistrationKind,
