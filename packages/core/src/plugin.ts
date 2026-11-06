@@ -44,12 +44,12 @@ export function Plugin<R = never, LayerError = never, ProgramError = never>(
 }
 
 /** Validates the shape the host reads from a module's default export. */
-export function isPlugin(value: unknown): value is Plugin<never, never> {
+export function isPlugin(value: unknown): value is Plugin<never, unknown> {
   if (typeof value !== "object" || value === null) {
     return false;
   }
 
-  const candidate = value as Partial<Plugin<never, never>>;
+  const candidate = value as Partial<Plugin<never, unknown>>;
   return (
     isValidName(candidate.name) &&
     Layer.isLayer(candidate.layer) &&

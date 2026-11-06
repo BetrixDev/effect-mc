@@ -1,4 +1,4 @@
-import { Cause, Duration, Effect, Exit, Fiber, Layer, ManagedRuntime, Option, Scope } from "effect";
+import { Duration, Effect, Fiber, Layer, ManagedRuntime, Option, Scope } from "effect";
 import { RuntimeStateError, type RuntimeState } from "./errors";
 import { Observability } from "./observability";
 import { type Plugin, type RuntimeServices } from "./plugin";
@@ -20,15 +20,9 @@ type RuntimeContext<R> = Exclude<RuntimeServices, Scope.Scope> | R;
 
 const DEFAULT_PROGRAM_TIMEOUT: Duration.Input = "5 seconds";
 
-const isDevelopmentEnvironment = (): boolean => {
-  const runtimeProcess = (
-    globalThis as {
-      readonly process?: { readonly env?: Record<string, string | undefined> };
-    }
-  ).process;
-  const environment = runtimeProcess?.env?.NODE_ENV;
-  return environment === "development" || environment === "test";
-};
+const isDevelopmentEnvironment = (): boolean =>
+  typeof process !== "undefined" &&
+  (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test");
 
 /**
  * One started plugin: a Layer-backed Effect runtime, the program's scope, and
@@ -41,20 +35,17 @@ export class PluginRuntime<R = never, E = never> {
   readonly plugin: Plugin<R, E>;
   readonly registry: RegistryService;
 
-  private readonly scope: Scope.Closeable;
   private readonly development: boolean;
   private readonly programTimeout: Duration.Input;
   private readonly observability: Layer.Layer<Observability, never, never>;
 
   private managed: ManagedRuntime.ManagedRuntime<RuntimeContext<R>, E> | undefined;
   private state: RuntimeState = "idle";
-  private disposePromise: Promise<void> | undefined;
-  private cleanedUp = false;
+  private teardownPromise: Promise<void> | undefined;
 
   private constructor(plugin: Plugin<R, E>, options: PluginRuntimeOptions) {
     this.plugin = plugin;
     this.registry = makeRegistry();
-    this.scope = Scope.makeUnsafe();
     this.development = options.development ?? isDevelopmentEnvironment();
     this.programTimeout = options.programTimeout ?? DEFAULT_PROGRAM_TIMEOUT;
     this.observability = options.observability ?? Observability.layer;
@@ -83,14 +74,11 @@ export class PluginRuntime<R = never, E = never> {
       throw new RuntimeStateError({
         plugin: this.plugin.name,
         state: this.state,
-        message:
-          this.state === "disposed"
-            ? `Plugin '${this.plugin.name}' runtime is disposed; create a new runtime to restart it`
-            : `Plugin '${this.plugin.name}' runtime cannot start from state '${this.state}'`,
+        message: `Plugin '${this.plugin.name}' runtime cannot start from state '${this.state}'; a disposed runtime must be recreated`,
       });
     }
 
-    this.setState("starting");
+    this.state = "starting";
 
     const runtimeLayer = Layer.merge(
       this.plugin.layer,
@@ -100,41 +88,29 @@ export class PluginRuntime<R = never, E = never> {
     try {
       const managed = ManagedRuntime.make(runtimeLayer);
       this.managed = managed;
-      await managed.runPromise(this.startEffect());
+      await managed.runPromise(this.startEffect(managed.scope));
       if (!this.disposed) {
-        this.setState("running");
+        this.state = "running";
       }
     } catch (error) {
       if (!this.disposed) {
-        this.setState("failed");
+        this.state = "failed";
       }
-      await this.disposeResources().catch(() => undefined);
+      await this.teardown();
       throw error;
     }
   }
 
   /**
-   * Closes the program scope, empties the Registry, and disposes the Layer
+   * Closes the runtime scope, empties the Registry, and disposes the Layer
    * runtime. Calling it again is a no-op; the runtime never starts again.
    */
   dispose(): Promise<void> {
-    if (this.disposePromise !== undefined) {
-      return this.disposePromise;
-    }
-    if (this.state === "disposed") {
-      return Promise.resolve();
-    }
-
-    this.setState("disposed");
-    this.disposePromise = this.disposeResources();
-    return this.disposePromise;
+    this.state = "disposed";
+    return this.teardown();
   }
 
-  private setState(state: RuntimeState): void {
-    this.state = state;
-  }
-
-  private startEffect(): Effect.Effect<void, E, RuntimeContext<R>> {
+  private startEffect(scope: Scope.Closeable): Effect.Effect<void, E, RuntimeContext<R>> {
     const { development, plugin, programTimeout } = this;
 
     const runProgram = Effect.gen(function* () {
@@ -156,26 +132,24 @@ export class PluginRuntime<R = never, E = never> {
       }
     });
 
-    return Scope.provide(this.scope)(runProgram);
+    return Scope.provide(scope)(runProgram);
+  }
+
+  private teardown(): Promise<void> {
+    this.teardownPromise ??= this.disposeResources();
+    return this.teardownPromise;
   }
 
   private async disposeResources(): Promise<void> {
-    if (this.cleanedUp) {
-      return;
-    }
-    this.cleanedUp = true;
-
-    const closeExit = await Effect.runPromiseExit(Scope.close(this.scope, Exit.void));
-    this.registry.clear();
-
     const managed = this.managed;
     this.managed = undefined;
-    if (managed !== undefined) {
-      await managed.dispose();
-    }
 
-    if (Exit.isFailure(closeExit)) {
-      throw Cause.squash(closeExit.cause);
+    try {
+      if (managed !== undefined) {
+        await managed.dispose();
+      }
+    } finally {
+      this.registry.clear();
     }
   }
 }

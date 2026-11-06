@@ -1,7 +1,7 @@
 import { expect, test } from "vite-plus/test";
 import { makeRegistry } from "./registry";
 
-test("records, removes, and empties registrations", () => {
+test("records and empties registrations", () => {
   const registry = makeRegistry();
   const listener = { kind: "listener", name: "BlockBreakEvent" } as const;
   const task = { kind: "task", name: "sweep" } as const;
@@ -9,9 +9,6 @@ test("records, removes, and empties registrations", () => {
   registry.add(task);
 
   expect(registry.entries()).toEqual([listener, task]);
-
-  registry.remove(listener);
-  expect(registry.entries()).toEqual([task]);
 
   registry.clear();
   expect(registry.entries()).toEqual([]);

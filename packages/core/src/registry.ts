@@ -19,8 +19,6 @@ export interface Registration {
 export interface RegistryService {
   /** Records an attachment. */
   readonly add: (registration: Registration) => void;
-  /** Removes an entry by identity. Detaching is the caller's job. */
-  readonly remove: (registration: Registration) => void;
   readonly entries: () => ReadonlyArray<Registration>;
   /** Empties the Registry. Teardown calls this after the runtime scope closes. */
   readonly clear: () => void;
@@ -39,12 +37,6 @@ export const makeRegistry = (): RegistryService => {
   return {
     add: (registration) => {
       registrations.push(registration);
-    },
-    remove: (registration) => {
-      const index = registrations.indexOf(registration);
-      if (index >= 0) {
-        registrations.splice(index, 1);
-      }
     },
     entries: () => registrations.slice(),
     clear: () => {
