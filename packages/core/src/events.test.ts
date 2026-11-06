@@ -1,12 +1,14 @@
 import { Deferred, Effect, Exit, Layer, Option, Stream } from "effect";
 import { expect, test } from "vite-plus/test";
-import { AsyncInCancellableHandler } from "./errors";
+import { AsyncInCancellableHandler, EventThreadingMismatch } from "./errors";
 import { makeEventBus } from "./event-bus";
 import { Events, type EventAttachment, type EventHandle } from "./events";
 import { Observability } from "./observability";
+import { Paper } from "./paper";
 import { Plugin, type RuntimeServices } from "./plugin";
 import { PluginRuntime } from "./runtime";
 import { SyncWindow } from "./sync-window";
+import { AsyncThread, Main } from "./threads";
 
 class BlockBreakEvent {
   cancelled = false;
@@ -36,9 +38,10 @@ const silentObservability = Layer.succeed(Observability, {
 
 const start = async <E>(
   program: Effect.Effect<void, E, RuntimeServices>,
+  options: { readonly development?: boolean } = {},
 ): Promise<PluginRuntime<never, E>> => {
   const runtime = PluginRuntime.make(Plugin("events", Layer.empty, program), {
-    development: false,
+    development: options.development ?? false,
     observability: silentObservability,
   });
   await runtime.start();
@@ -317,6 +320,163 @@ test("Events.of yields the stream element and its late cancel fails", async () =
   expect(seen?.player).toBe("alex");
   const exit = Effect.runSyncExit(Effect.provideService(seen!.cancel, SyncWindow, undefined));
   expect(Exit.isFailure(exit)).toBe(true);
+
+  await runtime.dispose();
+});
+
+test("an async attachment receives AsyncThread", async () => {
+  let yieldedAsyncThread = false;
+  const completed = Deferred.makeUnsafe<void>();
+  const runtime = await start(
+    Effect.gen(function* () {
+      yield* Events.attach(ChatEvent, { mode: "async" }, () =>
+        Effect.gen(function* () {
+          yield* AsyncThread;
+          yieldedAsyncThread = true;
+          Deferred.doneUnsafe(completed, Effect.void);
+        }),
+      );
+    }),
+  );
+
+  runtime.eventBus.dispatch(ChatEvent, "async", new ChatEvent());
+  await Effect.runPromise(Deferred.await(completed));
+
+  expect(yieldedAsyncThread).toBe(true);
+
+  await runtime.dispose();
+});
+
+test("an async handle cannot cancel even when SyncWindow is bypassed", async () => {
+  let captured: EventHandle<BlockBreakEvent> | undefined;
+  const completed = Deferred.makeUnsafe<void>();
+
+  const runtime = await start(
+    Effect.gen(function* () {
+      yield* Events.attach(BlockBreakEvent, { mode: "async" }, (handle) =>
+        Effect.sync(() => {
+          captured = handle;
+          Deferred.doneUnsafe(completed, Effect.void);
+        }),
+      );
+    }),
+  );
+
+  runtime.eventBus.dispatch(BlockBreakEvent, "async", new BlockBreakEvent("alex", "stone"));
+  await Effect.runPromise(Deferred.await(completed));
+  expect(captured).toBeDefined();
+
+  const exit = Effect.runSyncExit(Effect.provideService(captured!.cancel, SyncWindow, undefined));
+
+  expect(Exit.isFailure(exit)).toBe(true);
+  const error = Option.getOrThrow(Exit.findErrorOption(exit));
+  expect(error).toBeInstanceOf(AsyncInCancellableHandler);
+  expect(error.message).toContain("async");
+
+  await runtime.dispose();
+});
+
+test("an async handler hops to Main through a player", async () => {
+  const player = { name: "alex" };
+  let region: unknown = "unset";
+  let sawAsyncThread = false;
+  const completed = Deferred.makeUnsafe<void>();
+
+  const runtime = await start(
+    Effect.gen(function* () {
+      yield* Events.attach(ChatEvent, { mode: "async" }, () =>
+        Effect.gen(function* () {
+          yield* AsyncThread;
+          sawAsyncThread = true;
+
+          yield* Paper.on(
+            player,
+            Effect.gen(function* () {
+              const main = yield* Main;
+              region = main.region;
+              Deferred.doneUnsafe(completed, Effect.void);
+            }),
+          );
+        }),
+      );
+    }),
+  );
+
+  runtime.eventBus.dispatch(ChatEvent, "async", new ChatEvent());
+  await Effect.runPromise(Deferred.await(completed));
+
+  expect(sawAsyncThread).toBe(true);
+  expect(region).toBe(player);
+
+  await runtime.dispose();
+});
+
+test("a dispatch that disagrees with the declared mode fails loudly in development", async () => {
+  const asyncRuntime = await start(
+    Effect.gen(function* () {
+      yield* Events.attach(ChatEvent, { mode: "async" }, () => Effect.void);
+    }),
+    { development: true },
+  );
+
+  expect(() => asyncRuntime.eventBus.dispatch(ChatEvent, "sync", new ChatEvent())).toThrow(
+    EventThreadingMismatch,
+  );
+
+  await asyncRuntime.dispose();
+
+  const syncRuntime = await start(
+    Effect.gen(function* () {
+      yield* Events.attach(ChatEvent, { mode: "sync" }, () => Effect.void);
+    }),
+    { development: true },
+  );
+
+  expect(() => syncRuntime.eventBus.dispatch(ChatEvent, "async", new ChatEvent())).toThrow(
+    EventThreadingMismatch,
+  );
+
+  await syncRuntime.dispose();
+});
+
+test("a mismatched dispatch is skipped outside development", async () => {
+  const runtime = await start(
+    Effect.gen(function* () {
+      yield* Events.attach(ChatEvent, { mode: "async" }, () => Effect.void);
+    }),
+  );
+
+  expect(() => runtime.eventBus.dispatch(ChatEvent, "sync", new ChatEvent())).not.toThrow();
+
+  await runtime.dispose();
+});
+
+test("sync and async attachments of the same event type both work", async () => {
+  const calls: Array<string> = [];
+  const asyncCompleted = Deferred.makeUnsafe<void>();
+
+  const runtime = await start(
+    Effect.gen(function* () {
+      yield* Events.attach(ChatEvent, { mode: "sync" }, () =>
+        Effect.sync(() => {
+          calls.push("sync");
+        }),
+      );
+      yield* Events.attach(ChatEvent, { mode: "async" }, () =>
+        Effect.sync(() => {
+          calls.push("async");
+          Deferred.doneUnsafe(asyncCompleted, Effect.void);
+        }),
+      );
+    }),
+  );
+
+  runtime.eventBus.dispatch(ChatEvent, "sync", new ChatEvent());
+  expect(calls).toEqual(["sync"]);
+
+  runtime.eventBus.dispatch(ChatEvent, "async", new ChatEvent());
+  await Effect.runPromise(Deferred.await(asyncCompleted));
+  expect(calls).toEqual(["sync", "async"]);
 
   await runtime.dispose();
 });

@@ -1,4 +1,5 @@
 import { Context } from "effect";
+import { EventThreadingMismatch } from "./errors";
 
 /**
  * Paper's six listener priorities, ordered from first to last dispatched.
@@ -63,9 +64,11 @@ export interface EventBusService {
    */
   readonly add: (registration: EventListenerRegistration) => () => void;
   /**
-   * Dispatches one event to every listener group registered for its class and
-   * mode, in priority order. Newly added or removed attachments do not affect
-   * an in-flight dispatch: the matching set is snapshotted first.
+   * Dispatches one event to every listener group registered for its class, in
+   * priority order. `mode` is the actual threading of the dispatch. A group
+   * declared for the other mode is skipped; in development it fails loudly
+   * instead (ADR-0012). Newly added or removed attachments do not affect an
+   * in-flight dispatch: the matching set is snapshotted first.
    */
   readonly dispatch: (eventClass: EventClass<unknown>, mode: EventMode, event: unknown) => void;
   /** A snapshot of the current listener groups and their attachments. */
@@ -106,7 +109,17 @@ const isCancelled = (event: unknown): boolean => {
   return typeof candidate.isCancelled === "function" && candidate.isCancelled();
 };
 
-export const makeEventBus = (): EventBusService => {
+export interface EventBusOptions {
+  /**
+   * Development buses fail loudly when an attachment's declared mode disagrees
+   * with the actual dispatch. Production buses skip the mismatched group so a
+   * platform threading change cannot corrupt the world.
+   */
+  readonly development?: boolean;
+}
+
+export const makeEventBus = (options: EventBusOptions = {}): EventBusService => {
+  const development = options.development ?? false;
   const listeners: Array<MutableEventListener> = [];
 
   const findGroup = (registration: EventListenerRegistration) =>
@@ -143,10 +156,24 @@ export const makeEventBus = (): EventBusService => {
     },
     dispatch: (eventClass, mode, event) => {
       const matching = listeners
-        .filter((listener) => listener.eventClass === eventClass && listener.mode === mode)
+        .filter((listener) => listener.eventClass === eventClass)
         .sort((left, right) => prioritySlots[left.priority] - prioritySlots[right.priority]);
 
       for (const listener of matching) {
+        if (listener.mode !== mode) {
+          if (development) {
+            throw new EventThreadingMismatch({
+              event: listener.eventName,
+              declared: listener.mode,
+              actual: mode,
+              message:
+                `Event '${listener.eventName}' was attached in ${listener.mode} mode ` +
+                `but dispatched on the ${mode} thread.`,
+            });
+          }
+          continue;
+        }
+
         for (const registration of listener.registrations.slice()) {
           if (registration.ignoreCancelled && isCancelled(event)) {
             continue;

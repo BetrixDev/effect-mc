@@ -31,3 +31,19 @@ export class AsyncInCancellableHandler extends Schema.TaggedError<AsyncInCancell
     message: Schema.String,
   },
 ) {}
+
+/**
+ * Raised in development when a dispatch's actual threading disagrees with the
+ * mode an attachment declared. Paper can fire an event on a different thread
+ * than its class suggests, so the declared mode is the authority and a
+ * mismatch must be loud rather than silently moving the handler (ADR-0012).
+ */
+export class EventThreadingMismatch extends Schema.TaggedError<EventThreadingMismatch>()(
+  "EventThreadingMismatch",
+  {
+    event: Schema.String,
+    declared: Schema.Literals(["sync", "async"]),
+    actual: Schema.Literals(["sync", "async"]),
+    message: Schema.String,
+  },
+) {}

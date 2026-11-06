@@ -5,6 +5,7 @@ import { EventBus, makeEventBus, type EventBusService } from "./event-bus";
 import { Observability } from "./observability";
 import { type Plugin, type RuntimeServices } from "./plugin";
 import { makeRegistry, type RegistryService, Registry } from "./registry";
+import { immediateMainThread, MainThread, type MainThreadService } from "./threads";
 
 export interface PluginRuntimeOptions {
   /**
@@ -23,6 +24,11 @@ export interface PluginRuntimeOptions {
    * only moves when its host calls `advance`.
    */
   readonly clock?: TickClock;
+  /**
+   * The hop seam behind `Paper.on`. Defaults to running the work inline;
+   * the Paper host should schedule it on the server thread.
+   */
+  readonly mainThread?: MainThreadService;
 }
 
 type RuntimeContext<R> = Exclude<RuntimeServices, Scope.Scope> | R;
@@ -51,6 +57,7 @@ export class PluginRuntime<R = never, E = never> {
   private readonly development: boolean;
   private readonly programTimeout: Duration.Input;
   private readonly observability: Layer.Layer<Observability, never, never>;
+  private readonly mainThread: MainThreadService;
 
   private managed: ManagedRuntime.ManagedRuntime<RuntimeContext<R>, E> | undefined;
   private state: RuntimeState = "idle";
@@ -59,11 +66,12 @@ export class PluginRuntime<R = never, E = never> {
   private constructor(plugin: Plugin<R, E>, options: PluginRuntimeOptions) {
     this.plugin = plugin;
     this.registry = makeRegistry();
-    this.eventBus = options.eventBus ?? makeEventBus();
     this.clock = options.clock ?? new TickClock();
     this.development = options.development ?? isDevelopmentEnvironment();
+    this.eventBus = options.eventBus ?? makeEventBus({ development: this.development });
     this.programTimeout = options.programTimeout ?? DEFAULT_PROGRAM_TIMEOUT;
     this.observability = options.observability ?? Observability.layer;
+    this.mainThread = options.mainThread ?? immediateMainThread;
   }
 
   static make<R, E>(plugin: Plugin<R, E>, options: PluginRuntimeOptions = {}): PluginRuntime<R, E> {
@@ -99,6 +107,7 @@ export class PluginRuntime<R = never, E = never> {
       this.plugin.layer,
       Layer.succeed(Registry, this.registry),
       Layer.succeed(EventBus, this.eventBus),
+      Layer.succeed(MainThread, this.mainThread),
       this.observability,
       Layer.succeed(Clock.Clock, this.clock.clock),
     );

@@ -12,6 +12,7 @@ import { Observability } from "./observability";
 import { type RuntimeServices } from "./plugin";
 import { type Registration, Registry } from "./registry";
 import { SyncWindow } from "./sync-window";
+import { AsyncThread, Main } from "./threads";
 
 export interface EventAttachOptions {
   readonly mode: EventMode;
@@ -97,20 +98,23 @@ const makeRegistration = (
 
 interface WindowState {
   open: boolean;
+  mode: EventMode;
 }
 
-const cancelFailure = (event: string): AsyncInCancellableHandler =>
+const cancelFailure = (event: string, mode: EventMode): AsyncInCancellableHandler =>
   new AsyncInCancellableHandler({
     event,
     message:
-      `Cancel was called after the synchronous ${event} dispatch returned. ` +
-      "If you forked this work, cancel before the handler returns; a fork inherits SyncWindow but not the open window.",
+      mode === "async"
+        ? `Cancel is not available for the async ${event} dispatch. Hop to Main with Paper.on when the handler needs world access.`
+        : `Cancel was called after the synchronous ${event} dispatch returned. ` +
+          "If you forked this work, cancel before the handler returns; a fork inherits SyncWindow but not the open window.",
   });
 
 const makeHandle = <T>(event: T, eventName: string, window: WindowState): EventHandle<T> => {
   const cancel: EventCancel = Effect.suspend(() => {
     if (!window.open) {
-      return Effect.fail(cancelFailure(eventName));
+      return Effect.fail(cancelFailure(eventName, window.mode));
     }
 
     return Effect.sync(() => {
@@ -159,7 +163,9 @@ export function of<C extends EventClass<unknown>>(
       yield* Effect.addFinalizer(() => Effect.sync(removeListener));
 
       return Stream.fromQueue(queue).pipe(
-        Stream.map((event) => makeHandle(event, eventName, { open: false })),
+        Stream.map((event) =>
+          makeHandle(event, eventName, { open: false, mode: registration.mode }),
+        ),
       );
     }),
   );
@@ -170,21 +176,21 @@ export function of<C extends EventClass<unknown>>(
  * runtime: teardown detaches it, and the returned handle can detach earlier.
  *
  * A sync handler runs through `runSyncExit` before the Java listener returns,
- * so a cancel lands in time. The window closes as soon as the handler returns;
- * a later cancel — including one reached through a fork — fails with
- * `AsyncInCancellableHandler`.
+ * receives `Main` and `SyncWindow`, and can cancel while the window is open.
+ * An async handler is forked with `AsyncThread`, has no cancel, and must hop
+ * with `Paper.on` to touch the world (ADR-0012).
  */
 export function attach<C extends EventClass<unknown>, E, R>(
   eventType: C,
   options: EventAttachOptions & { readonly mode: "sync" },
   handler: EventHandler<EventInstance<C>, E, R>,
-): Effect.Effect<EventAttachment, E, Exclude<R, SyncWindow> | RuntimeServices>;
+): Effect.Effect<EventAttachment, E, Exclude<R, SyncWindow | Main> | RuntimeServices>;
 
 export function attach<C extends EventClass<unknown>, E, R>(
   eventType: C,
   options: EventAttachOptions & { readonly mode: "async" },
-  handler: EventHandler<EventInstance<C>, E, Exclude<R, SyncWindow>>,
-): Effect.Effect<EventAttachment, E, R | RuntimeServices>;
+  handler: EventHandler<EventInstance<C>, E, Exclude<R, SyncWindow | Main>>,
+): Effect.Effect<EventAttachment, E, Exclude<R, AsyncThread> | RuntimeServices>;
 
 export function attach<C extends EventClass<unknown>, E, R>(
   eventType: C,
@@ -200,29 +206,44 @@ export function attach<C extends EventClass<unknown>, E, R>(
     const eventName = eventTypeName(eventType);
 
     const listener = makeRegistration(eventType, eventName, options, (event) => {
-      const window: WindowState = { open: true };
+      // Only the sync window can cancel. An async handle is never open, even
+      // if a cast gets past the type system.
+      const window: WindowState = { open: options.mode === "sync", mode: options.mode };
       const handle = makeHandle(event as EventInstance<C>, eventName, window);
-
       const handled = handler(handle);
-      // Sync handlers get the cancel window; async handlers must not see it.
-      const effect = (
-        options.mode === "sync"
-          ? handled.pipe(Effect.provideService(SyncWindow, undefined))
-          : handled
-      ) as Effect.Effect<void, E>;
 
-      let exit: Exit.Exit<void, E>;
-      try {
-        exit = Effect.runSyncExitWith(context)(effect);
-      } finally {
-        window.open = false;
+      if (options.mode === "sync") {
+        const effect = handled.pipe(
+          Effect.provideService(SyncWindow, undefined),
+          Effect.provideService(Main, { region: undefined }),
+        ) as Effect.Effect<void, E>;
+
+        let exit: Exit.Exit<void, E>;
+        try {
+          exit = Effect.runSyncExitWith(context)(effect);
+        } finally {
+          window.open = false;
+        }
+
+        if (Exit.isFailure(exit)) {
+          Effect.runSync(
+            observability.log("error", `Event handler for ${eventName} failed.`, exit.cause),
+          );
+        }
+        return;
       }
 
-      if (Exit.isFailure(exit)) {
-        Effect.runSync(
-          observability.log("error", `Event handler for ${eventName} failed.`, exit.cause),
-        );
-      }
+      const effect = handled.pipe(Effect.provideService(AsyncThread, undefined)) as Effect.Effect<
+        void,
+        E,
+        never
+      >;
+      const observed = effect.pipe(
+        Effect.catchCause((cause) =>
+          observability.log("error", `Async event handler for ${eventName} failed.`, cause),
+        ),
+      );
+      Effect.runForkWith(context)(observed);
     });
 
     const removeListener = bus.add(listener);
