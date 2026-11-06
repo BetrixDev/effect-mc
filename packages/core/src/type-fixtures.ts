@@ -25,6 +25,9 @@ export const runtimeServices = () =>
     }),
   );
 
+// Effect.sleep reads the runtime's tick clock without an extra requirement.
+export const sleepsOnRuntimeClock = () => Plugin("sleepy", Layer.empty, Effect.sleep("1 second"));
+
 // A program may use a service its own layer provides.
 export const satisfiedRequirement = () =>
   Plugin(

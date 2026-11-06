@@ -1,5 +1,6 @@
 import { Context, Deferred, Effect, Layer } from "effect";
 import { expect, test } from "vite-plus/test";
+import { TICK_MILLIS } from "./clock";
 import { RuntimeStateError } from "./errors";
 import { Observability, type ObservabilityLevel } from "./observability";
 import { Plugin } from "./plugin";
@@ -51,6 +52,71 @@ test("runs the program to completion and records what it attached", async () => 
   expect(runtime.registry.entries()).toEqual([]);
 });
 
+test("drives a plugin's sleep from the runtime tick clock", async () => {
+  const sleeping = Deferred.makeUnsafe<void>();
+  const runtime = PluginRuntime.make(
+    Plugin(
+      "clocked",
+      Layer.empty,
+      Effect.gen(function* () {
+        Deferred.doneUnsafe(sleeping, Effect.void);
+        yield* Effect.sleep(`${TICK_MILLIS * 2} millis`);
+        const registry = yield* Registry;
+        registry.add({ kind: "task", name: "woke" });
+      }),
+    ),
+    options(),
+  );
+
+  const starting = runtime.start();
+  await Effect.runPromise(Deferred.await(sleeping));
+
+  runtime.clock.advance();
+  await Effect.runPromise(Effect.yieldNow);
+  expect(runtime.registry.entries()).toEqual([]);
+
+  runtime.clock.advance();
+  await starting;
+
+  expect(runtime.registry.entries()).toEqual([{ kind: "task", name: "woke" }]);
+
+  await runtime.dispose();
+});
+
+test("drives scoped attach work from the same runtime tick clock", async () => {
+  const sleeping = Deferred.makeUnsafe<void>();
+  const woke = Deferred.makeUnsafe<void>();
+  const runtime = PluginRuntime.make(
+    Plugin(
+      "clocked-attach",
+      Layer.empty,
+      Effect.gen(function* () {
+        yield* Effect.forkScoped(
+          Effect.gen(function* () {
+            Deferred.doneUnsafe(sleeping, Effect.void);
+            yield* Effect.sleep(`${TICK_MILLIS} millis`);
+            const registry = yield* Registry;
+            registry.add({ kind: "task", name: "slept" });
+            Deferred.doneUnsafe(woke, Effect.void);
+          }),
+        );
+      }),
+    ),
+    options(),
+  );
+
+  await runtime.start();
+  await Effect.runPromise(Deferred.await(sleeping));
+  expect(runtime.registry.entries()).toEqual([]);
+
+  runtime.clock.advance();
+  await Effect.runPromise(Deferred.await(woke));
+
+  expect(runtime.registry.entries()).toEqual([{ kind: "task", name: "slept" }]);
+
+  await runtime.dispose();
+});
+
 test("keeps scoped attach work alive until teardown interrupts it", async () => {
   let interrupted = false;
   const plugin = Plugin(
@@ -82,15 +148,19 @@ test("keeps scoped attach work alive until teardown interrupts it", async () => 
 
 test("warns in development without interrupting a program that outlives the warning window", async () => {
   const logs: Array<LogRecord> = [];
+  const started = Deferred.makeUnsafe<void>();
   const gate = Deferred.makeUnsafe<void>();
+  const finished = Deferred.makeUnsafe<void>();
   const runtime = PluginRuntime.make(
     Plugin(
       "slow",
       Layer.empty,
       Effect.gen(function* () {
+        Deferred.doneUnsafe(started, Effect.void);
         yield* Deferred.await(gate);
         const registry = yield* Registry;
         registry.add({ kind: "task", name: "late" });
+        Deferred.doneUnsafe(finished, Effect.void);
       }),
     ),
     options({
@@ -100,7 +170,10 @@ test("warns in development without interrupting a program that outlives the warn
     }),
   );
 
-  await runtime.start();
+  const starting = runtime.start();
+  await Effect.runPromise(Deferred.await(started));
+  runtime.clock.advance();
+  await starting;
 
   expect(runtime.status).toBe("running");
   expect(logs).toHaveLength(1);
@@ -110,7 +183,7 @@ test("warns in development without interrupting a program that outlives the warn
   expect(runtime.registry.entries()).toEqual([]);
 
   Deferred.doneUnsafe(gate, Effect.void);
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await Effect.runPromise(Deferred.await(finished));
 
   expect(runtime.registry.entries()).toEqual([{ kind: "task", name: "late" }]);
 

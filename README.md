@@ -53,8 +53,8 @@ Internal links are absolute and clean, for example `/design/threading`.
 ## `@effectmc/core`
 
 `packages/core` holds the `Plugin` entry point, `PluginRuntime`, the teardown
-Registry, and the swappable observability layer. It will grow the rest of the
-v0 core surface described in `docs/adr/`.
+Registry, the tick-driven clock, and the swappable observability layer. It will
+grow the rest of the v0 core surface described in `docs/adr/`.
 
 Build or test it directly with:
 

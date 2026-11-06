@@ -3,6 +3,7 @@
  *
  * The plugin entry point, runtime, Registry, and observability seam.
  */
+export { TICK_MILLIS, TICKS_PER_SECOND, TickClock, type TickClockOptions } from "./clock";
 export { isPlugin, Plugin, type RuntimeServices } from "./plugin";
 export {
   Registry,
