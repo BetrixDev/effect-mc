@@ -8,7 +8,7 @@ import { Paper } from "./paper";
 import { Plugin, type RuntimeServices } from "./plugin";
 import { PluginRuntime } from "./runtime";
 import { SyncWindow } from "./sync-window";
-import { AsyncThread, Main } from "./threads";
+import { AsyncThread, Main, type MainThreadService, type RegionTarget } from "./threads";
 
 class BlockBreakEvent {
   cancelled = false;
@@ -32,17 +32,28 @@ class ChatEvent {
   readonly message = "hello";
 }
 
+class ThreadedChatEvent extends ChatEvent {
+  constructor(private readonly asynchronous: boolean) {
+    super();
+  }
+
+  isAsynchronous(): boolean {
+    return this.asynchronous;
+  }
+}
+
 const silentObservability = Layer.succeed(Observability, {
   log: () => Effect.void,
 });
 
 const start = async <E>(
   program: Effect.Effect<void, E, RuntimeServices>,
-  options: { readonly development?: boolean } = {},
+  options: { readonly development?: boolean; readonly mainThread?: MainThreadService } = {},
 ): Promise<PluginRuntime<never, E>> => {
   const runtime = PluginRuntime.make(Plugin("events", Layer.empty, program), {
     development: options.development ?? false,
     observability: silentObservability,
+    mainThread: options.mainThread,
   });
   await runtime.start();
   return runtime;
@@ -377,8 +388,16 @@ test("an async handle cannot cancel even when SyncWindow is bypassed", async () 
 });
 
 test("an async handler hops to Main through a player", async () => {
-  const player = { name: "alex" };
-  let region: unknown = "unset";
+  const player = { name: "alex" } as unknown as RegionTarget;
+  const hops: Array<RegionTarget> = [];
+  const mainThread: MainThreadService = {
+    run: (target, effect) =>
+      Effect.sync(() => {
+        hops.push(target);
+      }).pipe(Effect.flatMap(() => effect)),
+  };
+
+  let region: RegionTarget | undefined;
   let sawAsyncThread = false;
   const completed = Deferred.makeUnsafe<void>();
 
@@ -400,13 +419,48 @@ test("an async handler hops to Main through a player", async () => {
         }),
       );
     }),
+    { mainThread },
   );
 
   runtime.eventBus.dispatch(ChatEvent, "async", new ChatEvent());
   await Effect.runPromise(Deferred.await(completed));
 
   expect(sawAsyncThread).toBe(true);
+  expect(hops).toEqual([player]);
   expect(region).toBe(player);
+
+  await runtime.dispose();
+});
+
+test("a hop is a no-op when Main is already present", async () => {
+  let hops = 0;
+  const mainThread: MainThreadService = {
+    run: (_target, effect) =>
+      Effect.sync(() => {
+        hops += 1;
+      }).pipe(Effect.flatMap(() => effect)),
+  };
+
+  let region: RegionTarget | undefined;
+  const runtime = await start(
+    Effect.gen(function* () {
+      yield* Events.attach(ChatEvent, { mode: "sync" }, () =>
+        Paper.on(
+          {} as RegionTarget,
+          Effect.gen(function* () {
+            const main = yield* Main;
+            region = main.region;
+          }),
+        ),
+      );
+    }),
+    { mainThread },
+  );
+
+  runtime.eventBus.dispatch(ChatEvent, "sync", new ChatEvent());
+
+  expect(hops).toBe(0);
+  expect(region).toBeUndefined();
 
   await runtime.dispose();
 });
@@ -439,6 +493,21 @@ test("a dispatch that disagrees with the declared mode fails loudly in developme
   await syncRuntime.dispose();
 });
 
+test("the event's own threading decides the mode", async () => {
+  const runtime = await start(
+    Effect.gen(function* () {
+      yield* Events.attach(ChatEvent, { mode: "sync" }, () => Effect.void);
+    }),
+    { development: true },
+  );
+
+  expect(() => runtime.eventBus.dispatch(ChatEvent, "sync", new ThreadedChatEvent(true))).toThrow(
+    EventThreadingMismatch,
+  );
+
+  await runtime.dispose();
+});
+
 test("a mismatched dispatch is skipped outside development", async () => {
   const runtime = await start(
     Effect.gen(function* () {
@@ -469,12 +538,14 @@ test("sync and async attachments of the same event type both work", async () => 
         }),
       );
     }),
+    { development: true },
   );
 
-  runtime.eventBus.dispatch(ChatEvent, "sync", new ChatEvent());
+  // The hint is deliberately wrong; the event's own threading is authoritative.
+  runtime.eventBus.dispatch(ChatEvent, "async", new ThreadedChatEvent(false));
   expect(calls).toEqual(["sync"]);
 
-  runtime.eventBus.dispatch(ChatEvent, "async", new ChatEvent());
+  runtime.eventBus.dispatch(ChatEvent, "sync", new ThreadedChatEvent(true));
   await Effect.runPromise(Deferred.await(asyncCompleted));
   expect(calls).toEqual(["sync", "async"]);
 

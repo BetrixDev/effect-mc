@@ -64,11 +64,12 @@ export interface EventBusService {
    */
   readonly add: (registration: EventListenerRegistration) => () => void;
   /**
-   * Dispatches one event to every listener group registered for its class, in
-   * priority order. `mode` is the actual threading of the dispatch. A group
-   * declared for the other mode is skipped; in development it fails loudly
-   * instead (ADR-0012). Newly added or removed attachments do not affect an
-   * in-flight dispatch: the matching set is snapshotted first.
+   * Dispatches one event to the listener groups attached for its class and
+   * actual threading, in priority order. `mode` is the dispatch's threading;
+   * when the event exposes `isAsynchronous()`, that value wins. Groups for the
+   * other mode are skipped. In development, a dispatch with no group for its
+   * actual mode fails loudly (ADR-0012). Newly added or removed attachments do
+   * not affect an in-flight dispatch: the matching set is snapshotted first.
    */
   readonly dispatch: (eventClass: EventClass<unknown>, mode: EventMode, event: unknown) => void;
   /** A snapshot of the current listener groups and their attachments. */
@@ -107,6 +108,18 @@ const sameGroup = (
 const isCancelled = (event: unknown): boolean => {
   const candidate = event as Partial<CancellableEvent>;
   return typeof candidate.isCancelled === "function" && candidate.isCancelled();
+};
+
+/**
+ * Paper reports the real threading on the event. The explicit mode is only a
+ * fallback for fakes and for events that do not carry `isAsynchronous()`.
+ */
+const eventMode = (event: unknown, fallback: EventMode): EventMode => {
+  const candidate = event as Partial<{ isAsynchronous(): boolean }>;
+  if (typeof candidate.isAsynchronous === "function") {
+    return candidate.isAsynchronous() ? "async" : "sync";
+  }
+  return fallback;
 };
 
 export interface EventBusOptions {
@@ -155,25 +168,28 @@ export const makeEventBus = (options: EventBusOptions = {}): EventBusService => 
       };
     },
     dispatch: (eventClass, mode, event) => {
-      const matching = listeners
-        .filter((listener) => listener.eventClass === eventClass)
+      const actualMode = eventMode(event, mode);
+      const attached = listeners.filter((listener) => listener.eventClass === eventClass);
+      const matching = attached
+        .filter((listener) => listener.mode === actualMode)
         .sort((left, right) => prioritySlots[left.priority] - prioritySlots[right.priority]);
 
-      for (const listener of matching) {
-        if (listener.mode !== mode) {
-          if (development) {
-            throw new EventThreadingMismatch({
-              event: listener.eventName,
-              declared: listener.mode,
-              actual: mode,
-              message:
-                `Event '${listener.eventName}' was attached in ${listener.mode} mode ` +
-                `but dispatched on the ${mode} thread.`,
-            });
-          }
-          continue;
-        }
+      const first = attached[0];
+      if (development && first !== undefined && matching.length === 0) {
+        // No group is prepared for this threading. Attaching both modes is the
+        // supported way to handle both branches, so this only fires when the
+        // event actually moved to a branch nobody declared (ADR-0012).
+        throw new EventThreadingMismatch({
+          event: first.eventName,
+          declared: first.mode,
+          actual: actualMode,
+          message:
+            `Event '${first.eventName}' was attached in ${first.mode} mode ` +
+            `but dispatched on the ${actualMode} thread.`,
+        });
+      }
 
+      for (const listener of matching) {
         for (const registration of listener.registrations.slice()) {
           if (registration.ignoreCancelled && isCancelled(event)) {
             continue;

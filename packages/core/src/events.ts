@@ -243,7 +243,8 @@ export function attach<C extends EventClass<unknown>, E, R>(
           observability.log("error", `Async event handler for ${eventName} failed.`, cause),
         ),
       );
-      Effect.runForkWith(context)(observed);
+      // Scoped so runtime teardown interrupts an in-flight async handler.
+      Effect.runForkWith(context)(Effect.forkScoped(observed));
     });
 
     const removeListener = bus.add(listener);

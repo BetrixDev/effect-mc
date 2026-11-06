@@ -34,7 +34,7 @@ export {
   MainThread,
   type MainThreadService,
   type MainValue,
-  type RegionRef,
+  type RegionTarget,
 } from "./threads";
 export { Paper } from "./paper";
 export {

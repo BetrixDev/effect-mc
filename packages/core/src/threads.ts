@@ -1,3 +1,4 @@
+import type { org } from "@effectmc/paper-types";
 import { Context, Effect } from "effect";
 
 /**
@@ -5,11 +6,11 @@ import { Context, Effect } from "effect";
  * absent; under Folia it names the holder whose region the fiber is on
  * (ADR-0007).
  */
-export type RegionRef = object;
+export type RegionTarget = org.bukkit.entity.Entity | org.bukkit.Location;
 
 /** The value carried by the `Main` capability. */
 export interface MainValue {
-  readonly region?: RegionRef;
+  readonly region?: RegionTarget;
 }
 
 /**
@@ -31,7 +32,7 @@ export class AsyncThread extends Context.Service<AsyncThread, void>()("effectmc/
  */
 export interface MainThreadService {
   readonly run: <A, E, R>(
-    target: RegionRef,
+    target: RegionTarget,
     effect: Effect.Effect<A, E, R>,
   ) => Effect.Effect<A, E, R>;
 }

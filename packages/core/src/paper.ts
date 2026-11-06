@@ -1,5 +1,5 @@
 import { Effect, Option } from "effect";
-import { Main, MainThread, type RegionRef } from "./threads";
+import { Main, MainThread, type RegionTarget } from "./threads";
 
 /**
  * Enters `Main` for `target`. On Paper every region is the same, so a fiber
@@ -10,7 +10,7 @@ import { Main, MainThread, type RegionRef } from "./threads";
  * `AsyncThread`, so a hop does not give async code world access by accident.
  */
 export function on<A, E, R>(
-  target: RegionRef,
+  target: RegionTarget,
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, Exclude<R, Main>> {
   return Effect.gen(function* () {

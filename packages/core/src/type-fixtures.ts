@@ -9,7 +9,7 @@ import { Paper } from "./paper";
 import { Plugin, type RuntimeServices } from "./plugin";
 import { Registry } from "./registry";
 import { SyncWindow } from "./sync-window";
-import { AsyncThread, Main } from "./threads";
+import { AsyncThread, Main, type RegionTarget } from "./threads";
 
 class Missing extends Context.Service<Missing, void>()("Missing") {}
 
@@ -156,19 +156,20 @@ export const syncAttachmentRequiresAsyncThread: Effect.Effect<
 > = Events.attach(FakeChatEvent, { mode: "sync" }, () => AsyncThread);
 
 declare const needsMain: Effect.Effect<void, never, Main>;
+declare const regionTarget: RegionTarget;
 
 // A Main-requiring effect cannot be used without a hop.
 // @ts-expect-error Main is required.
 export const missingMain: Effect.Effect<void> = needsMain;
 
 // A hop through an entity or location removes Main.
-export const hopRemovesMain: Effect.Effect<void> = Paper.on({}, needsMain);
+export const hopRemovesMain: Effect.Effect<void> = Paper.on(regionTarget, needsMain);
 
 // The same hop typechecks inside an async handler.
 export const asyncHandlerHops = () =>
   Events.attach(FakeChatEvent, { mode: "async" }, () =>
     Paper.on(
-      {},
+      regionTarget,
       Effect.gen(function* () {
         yield* Main;
         yield* AsyncThread;
