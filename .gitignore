@@ -13,3 +13,4 @@ host/build
 .env
 .env.local
 .vitest/
+.humanlayer/
