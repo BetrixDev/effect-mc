@@ -1,4 +1,4 @@
-import { Effect, Exit, Queue, Stream } from "effect";
+import { Cause, Effect, Exit, Queue, Stream } from "effect";
 import {
   EventBus,
   type CancellableEvent,
@@ -98,7 +98,6 @@ const makeRegistration = (
 
 interface WindowState {
   open: boolean;
-  mode: EventMode;
 }
 
 const cancelFailure = (event: string, mode: EventMode): AsyncInCancellableHandler =>
@@ -111,10 +110,15 @@ const cancelFailure = (event: string, mode: EventMode): AsyncInCancellableHandle
           "If you forked this work, cancel before the handler returns; a fork inherits SyncWindow but not the open window.",
   });
 
-const makeHandle = <T>(event: T, eventName: string, window: WindowState): EventHandle<T> => {
+const makeHandle = <T>(
+  event: T,
+  eventName: string,
+  mode: EventMode,
+  window: WindowState,
+): EventHandle<T> => {
   const cancel: EventCancel = Effect.suspend(() => {
     if (!window.open) {
-      return Effect.fail(cancelFailure(eventName, window.mode));
+      return Effect.fail(cancelFailure(eventName, mode));
     }
 
     return Effect.sync(() => {
@@ -163,9 +167,7 @@ export function of<C extends EventClass<unknown>>(
       yield* Effect.addFinalizer(() => Effect.sync(removeListener));
 
       return Stream.fromQueue(queue).pipe(
-        Stream.map((event) =>
-          makeHandle(event, eventName, { open: false, mode: registration.mode }),
-        ),
+        Stream.map((event) => makeHandle(event, eventName, registration.mode, { open: false })),
       );
     }),
   );
@@ -208,19 +210,31 @@ export function attach<C extends EventClass<unknown>, E, R>(
     const listener = makeRegistration(eventType, eventName, options, (event) => {
       // Only the sync window can cancel. An async handle is never open, even
       // if a cast gets past the type system.
-      const window: WindowState = { open: options.mode === "sync", mode: options.mode };
-      const handle = makeHandle(event as EventInstance<C>, eventName, window);
+      const window: WindowState = { open: options.mode === "sync" };
+      const handle = makeHandle(event as EventInstance<C>, eventName, options.mode, window);
       const handled = handler(handle);
 
-      if (options.mode === "sync") {
-        const effect = handled.pipe(
-          Effect.provideService(SyncWindow, undefined),
-          Effect.provideService(Main, { region: undefined }),
-        ) as Effect.Effect<void, E>;
+      const effect = (
+        options.mode === "sync"
+          ? handled.pipe(
+              Effect.provideService(SyncWindow, undefined),
+              Effect.provideService(Main, { region: undefined }),
+            )
+          : handled.pipe(Effect.provideService(AsyncThread, undefined))
+      ) as Effect.Effect<void, E, never>;
 
-        let exit: Exit.Exit<void, E>;
+      const observed = effect.pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.void
+            : observability.log("error", `Event handler for ${eventName} failed.`, cause),
+        ),
+      );
+
+      if (options.mode === "sync") {
+        let exit: Exit.Exit<void>;
         try {
-          exit = Effect.runSyncExitWith(context)(effect);
+          exit = Effect.runSyncExitWith(context)(observed);
         } finally {
           window.open = false;
         }
@@ -233,16 +247,6 @@ export function attach<C extends EventClass<unknown>, E, R>(
         return;
       }
 
-      const effect = handled.pipe(Effect.provideService(AsyncThread, undefined)) as Effect.Effect<
-        void,
-        E,
-        never
-      >;
-      const observed = effect.pipe(
-        Effect.catchCause((cause) =>
-          observability.log("error", `Async event handler for ${eventName} failed.`, cause),
-        ),
-      );
       // Scoped so runtime teardown interrupts an in-flight async handler.
       Effect.runForkWith(context)(Effect.forkScoped(observed));
     });

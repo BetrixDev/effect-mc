@@ -1,5 +1,6 @@
 import { Context } from "effect";
 import { EventThreadingMismatch } from "./errors";
+import { type EventMode } from "./event-mode";
 
 /**
  * Paper's six listener priorities, ordered from first to last dispatched.
@@ -9,12 +10,7 @@ export const eventPriorities = ["lowest", "low", "normal", "high", "highest", "m
 
 export type EventPriority = (typeof eventPriorities)[number];
 
-/**
- * How an attachment is registered. The mode is explicit because an event
- * class cannot tell you where it will run: `AsyncChatEvent` sometimes fires
- * synchronously (ADR-0012).
- */
-export type EventMode = "sync" | "async";
+export { eventModes, type EventMode } from "./event-mode";
 
 /**
  * The runtime value of a Bukkit event class. Paper's generated declaration for
@@ -65,13 +61,13 @@ export interface EventBusService {
   readonly add: (registration: EventListenerRegistration) => () => void;
   /**
    * Dispatches one event to the listener groups attached for its class and
-   * actual threading, in priority order. `mode` is the dispatch's threading;
-   * when the event exposes `isAsynchronous()`, that value wins. Groups for the
+   * actual threading, in priority order. Threading comes from the event's
+   * `isAsynchronous()`; a fake without it is treated as sync. Groups for the
    * other mode are skipped. In development, a dispatch with no group for its
    * actual mode fails loudly (ADR-0012). Newly added or removed attachments do
    * not affect an in-flight dispatch: the matching set is snapshotted first.
    */
-  readonly dispatch: (eventClass: EventClass<unknown>, mode: EventMode, event: unknown) => void;
+  readonly dispatch: (eventClass: EventClass<unknown>, event: unknown) => void;
   /** A snapshot of the current listener groups and their attachments. */
   readonly listeners: () => ReadonlyArray<EventListener>;
   /** Empties the bus. Runtime teardown calls this after the scope closes. */
@@ -111,15 +107,14 @@ const isCancelled = (event: unknown): boolean => {
 };
 
 /**
- * Paper reports the real threading on the event. The explicit mode is only a
- * fallback for fakes and for events that do not carry `isAsynchronous()`.
+ * Paper reports the real threading on the event. A fake that does not carry
+ * `isAsynchronous()` is treated as sync.
  */
-const eventMode = (event: unknown, fallback: EventMode): EventMode => {
+const eventMode = (event: unknown): EventMode => {
   const candidate = event as Partial<{ isAsynchronous(): boolean }>;
-  if (typeof candidate.isAsynchronous === "function") {
-    return candidate.isAsynchronous() ? "async" : "sync";
-  }
-  return fallback;
+  return typeof candidate.isAsynchronous === "function" && candidate.isAsynchronous()
+    ? "async"
+    : "sync";
 };
 
 export interface EventBusOptions {
@@ -167,8 +162,8 @@ export const makeEventBus = (options: EventBusOptions = {}): EventBusService => 
         }
       };
     },
-    dispatch: (eventClass, mode, event) => {
-      const actualMode = eventMode(event, mode);
+    dispatch: (eventClass, event) => {
+      const actualMode = eventMode(event);
       const attached = listeners.filter((listener) => listener.eventClass === eventClass);
       const matching = attached
         .filter((listener) => listener.mode === actualMode)

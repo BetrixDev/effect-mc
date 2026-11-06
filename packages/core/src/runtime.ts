@@ -17,7 +17,10 @@ export interface PluginRuntimeOptions {
   readonly programTimeout?: Duration.Input;
   /** Replaces the default console observability layer. */
   readonly observability?: Layer.Layer<Observability, never, never>;
-  /** Replaces the default in-memory event bus. Hosts supply their own. */
+  /**
+   * Replaces the default in-memory event bus. Hosts supply their own; a
+   * supplied bus keeps its own development policy.
+   */
   readonly eventBus?: EventBusService;
   /**
    * The tick clock the program reads time from. Defaults to a new clock that

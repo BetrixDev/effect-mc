@@ -9,7 +9,7 @@ import { Paper } from "./paper";
 import { Plugin, type RuntimeServices } from "./plugin";
 import { Registry } from "./registry";
 import { SyncWindow } from "./sync-window";
-import { AsyncThread, Main, type RegionTarget } from "./threads";
+import { AsyncThread, Main, MainThread, type RegionTarget } from "./threads";
 
 class Missing extends Context.Service<Missing, void>()("Missing") {}
 
@@ -162,8 +162,17 @@ declare const regionTarget: RegionTarget;
 // @ts-expect-error Main is required.
 export const missingMain: Effect.Effect<void> = needsMain;
 
-// A hop through an entity or location removes Main.
-export const hopRemovesMain: Effect.Effect<void> = Paper.on(regionTarget, needsMain);
+// A hop through an entity or location replaces Main with the hop seam.
+export const hopRemovesMain: Effect.Effect<void, never, MainThread> = Paper.on(
+  regionTarget,
+  needsMain,
+);
+
+// The runtime supplies MainThread, so a hop is satisfied inside a program.
+export const hopWithRuntimeServices: Effect.Effect<void, never, RuntimeServices> = Paper.on(
+  regionTarget,
+  needsMain,
+);
 
 // The same hop typechecks inside an async handler.
 export const asyncHandlerHops = () =>

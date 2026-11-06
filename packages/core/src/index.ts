@@ -17,6 +17,7 @@ export {
 } from "./events";
 export {
   EventBus,
+  eventModes,
   eventPriorities,
   type CancellableEvent,
   type EventBusService,

@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { eventModes } from "./event-mode";
 
 export const runtimeStates = ["idle", "starting", "running", "failed", "disposed"] as const;
 
@@ -42,8 +43,8 @@ export class EventThreadingMismatch extends Schema.TaggedError<EventThreadingMis
   "EventThreadingMismatch",
   {
     event: Schema.String,
-    declared: Schema.Literals(["sync", "async"]),
-    actual: Schema.Literals(["sync", "async"]),
+    declared: Schema.Literals(eventModes),
+    actual: Schema.Literals(eventModes),
     message: Schema.String,
   },
 ) {}

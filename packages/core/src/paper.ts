@@ -12,20 +12,16 @@ import { Main, MainThread, type RegionTarget } from "./threads";
 export function on<A, E, R>(
   target: RegionTarget,
   effect: Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, Exclude<R, Main>> {
+): Effect.Effect<A, E, Exclude<R, Main> | MainThread> {
   return Effect.gen(function* () {
     const current = yield* Effect.serviceOption(Main);
+    const mainThread = yield* MainThread;
+
     if (Option.isSome(current)) {
       return yield* Effect.provideService(effect, Main, current.value);
     }
 
-    const withMain = Effect.provideService(effect, Main, { region: target });
-    const mainThread = yield* Effect.serviceOption(MainThread);
-
-    return yield* Option.match(mainThread, {
-      onNone: () => withMain,
-      onSome: (service) => service.run(target, withMain),
-    });
+    return yield* mainThread.run(target, Effect.provideService(effect, Main, { region: target }));
   });
 }
 

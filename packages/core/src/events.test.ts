@@ -16,7 +16,12 @@ class BlockBreakEvent {
   constructor(
     readonly player: string,
     readonly block: string,
+    private readonly asynchronous = false,
   ) {}
+
+  isAsynchronous(): boolean {
+    return this.asynchronous;
+  }
 
   isCancelled(): boolean {
     return this.cancelled;
@@ -81,7 +86,7 @@ test("a sync attachment receives the stream element and reads its members", asyn
     }),
   );
 
-  runtime.eventBus.dispatch(BlockBreakEvent, "sync", new BlockBreakEvent("alex", "stone"));
+  runtime.eventBus.dispatch(BlockBreakEvent, new BlockBreakEvent("alex", "stone"));
 
   expect(seen).toBe("alex:stone");
 
@@ -102,7 +107,7 @@ test("cancel lands before the dispatch returns", async () => {
     }),
   );
 
-  runtime.eventBus.dispatch(BlockBreakEvent, "sync", event);
+  runtime.eventBus.dispatch(BlockBreakEvent, event);
 
   expect(event.isCancelled()).toBe(true);
 
@@ -121,7 +126,7 @@ test("a cancel after the dispatch fails with AsyncInCancellableHandler", async (
     }),
   );
 
-  runtime.eventBus.dispatch(BlockBreakEvent, "sync", new BlockBreakEvent("alex", "stone"));
+  runtime.eventBus.dispatch(BlockBreakEvent, new BlockBreakEvent("alex", "stone"));
   expect(captured).toBeDefined();
 
   const exit = Effect.runSyncExit(Effect.provideService(captured!.cancel, SyncWindow, undefined));
@@ -158,7 +163,7 @@ test("a fork that cancels later fails with the same error instead of doing nothi
     }),
   );
 
-  runtime.eventBus.dispatch(BlockBreakEvent, "sync", new BlockBreakEvent("alex", "stone"));
+  runtime.eventBus.dispatch(BlockBreakEvent, new BlockBreakEvent("alex", "stone"));
   Deferred.doneUnsafe(gate, Effect.void);
 
   const exit = await observed;
@@ -203,11 +208,11 @@ test("priority and mode select distinct listeners, and priority orders dispatch"
     { eventName: "ChatEvent", mode: "async", priority: "normal", attachments: 1 },
   ]);
 
-  runtime.eventBus.dispatch(BlockBreakEvent, "sync", new BlockBreakEvent("alex", "stone"));
+  runtime.eventBus.dispatch(BlockBreakEvent, new BlockBreakEvent("alex", "stone"));
 
   expect(calls).toEqual(["low", "high"]);
 
-  runtime.eventBus.dispatch(ChatEvent, "sync", new ChatEvent());
+  runtime.eventBus.dispatch(ChatEvent, new ChatEvent());
   expect(calls).toEqual(["low", "high"]);
 
   await runtime.dispose();
@@ -239,7 +244,7 @@ test("ignoreCancelled is honored per attachment at dispatch time", async () => {
     }),
   );
 
-  runtime.eventBus.dispatch(BlockBreakEvent, "sync", new BlockBreakEvent("alex", "stone"));
+  runtime.eventBus.dispatch(BlockBreakEvent, new BlockBreakEvent("alex", "stone"));
 
   expect(calls).toEqual(["canceller", "observes"]);
 
@@ -263,11 +268,11 @@ test("detaching removes the listener and its Registry entry", async () => {
     { kind: "listener", name: "BlockBreakEvent:sync:normal" },
   ]);
 
-  runtime.eventBus.dispatch(BlockBreakEvent, "sync", new BlockBreakEvent("alex", "stone"));
+  runtime.eventBus.dispatch(BlockBreakEvent, new BlockBreakEvent("alex", "stone"));
   expect(calls).toBe(1);
 
   Effect.runSync(attachment!.detach);
-  runtime.eventBus.dispatch(BlockBreakEvent, "sync", new BlockBreakEvent("alex", "stone"));
+  runtime.eventBus.dispatch(BlockBreakEvent, new BlockBreakEvent("alex", "stone"));
 
   expect(calls).toBe(1);
   expect(runtime.registry.entries()).toEqual([]);
@@ -299,7 +304,7 @@ test("two attachments in the same combination share one listener group", async (
   expect(listeners).toHaveLength(1);
   expect(listeners[0]?.registrations).toHaveLength(2);
 
-  runtime.eventBus.dispatch(BlockBreakEvent, "sync", new BlockBreakEvent("alex", "stone"));
+  runtime.eventBus.dispatch(BlockBreakEvent, new BlockBreakEvent("alex", "stone"));
   expect(calls).toEqual(["first", "second"]);
 
   await runtime.dispose();
@@ -325,7 +330,7 @@ test("Events.of yields the stream element and its late cancel fails", async () =
   );
 
   await waitUntil(() => runtime.eventBus.listeners().length === 1);
-  runtime.eventBus.dispatch(BlockBreakEvent, "sync", new BlockBreakEvent("alex", "stone"));
+  runtime.eventBus.dispatch(BlockBreakEvent, new BlockBreakEvent("alex", "stone"));
   await Effect.runPromise(Deferred.await(received));
 
   expect(seen?.player).toBe("alex");
@@ -350,7 +355,7 @@ test("an async attachment receives AsyncThread", async () => {
     }),
   );
 
-  runtime.eventBus.dispatch(ChatEvent, "async", new ChatEvent());
+  runtime.eventBus.dispatch(ChatEvent, new ThreadedChatEvent(true));
   await Effect.runPromise(Deferred.await(completed));
 
   expect(yieldedAsyncThread).toBe(true);
@@ -373,7 +378,7 @@ test("an async handle cannot cancel even when SyncWindow is bypassed", async () 
     }),
   );
 
-  runtime.eventBus.dispatch(BlockBreakEvent, "async", new BlockBreakEvent("alex", "stone"));
+  runtime.eventBus.dispatch(BlockBreakEvent, new BlockBreakEvent("alex", "stone", true));
   await Effect.runPromise(Deferred.await(completed));
   expect(captured).toBeDefined();
 
@@ -422,7 +427,7 @@ test("an async handler hops to Main through a player", async () => {
     { mainThread },
   );
 
-  runtime.eventBus.dispatch(ChatEvent, "async", new ChatEvent());
+  runtime.eventBus.dispatch(ChatEvent, new ThreadedChatEvent(true));
   await Effect.runPromise(Deferred.await(completed));
 
   expect(sawAsyncThread).toBe(true);
@@ -457,12 +462,46 @@ test("a hop is a no-op when Main is already present", async () => {
     { mainThread },
   );
 
-  runtime.eventBus.dispatch(ChatEvent, "sync", new ChatEvent());
+  runtime.eventBus.dispatch(ChatEvent, new ChatEvent());
 
   expect(hops).toBe(0);
   expect(region).toBeUndefined();
 
   await runtime.dispose();
+});
+
+test("disposing the runtime does not log an interrupted async handler", async () => {
+  const logs: Array<string> = [];
+  const recordingObservability = Layer.succeed(Observability, {
+    log: (_level, message) =>
+      Effect.sync(() => {
+        logs.push(message);
+      }),
+  });
+  const started = Deferred.makeUnsafe<void>();
+
+  const runtime = PluginRuntime.make(
+    Plugin(
+      "events",
+      Layer.empty,
+      Effect.gen(function* () {
+        yield* Events.attach(ChatEvent, { mode: "async" }, () =>
+          Effect.gen(function* () {
+            Deferred.doneUnsafe(started, Effect.void);
+            yield* Effect.never;
+          }),
+        );
+      }),
+    ),
+    { development: false, observability: recordingObservability },
+  );
+
+  await runtime.start();
+  runtime.eventBus.dispatch(ChatEvent, new ThreadedChatEvent(true));
+  await Effect.runPromise(Deferred.await(started));
+  await runtime.dispose();
+
+  expect(logs).toEqual([]);
 });
 
 test("a dispatch that disagrees with the declared mode fails loudly in development", async () => {
@@ -473,7 +512,7 @@ test("a dispatch that disagrees with the declared mode fails loudly in developme
     { development: true },
   );
 
-  expect(() => asyncRuntime.eventBus.dispatch(ChatEvent, "sync", new ChatEvent())).toThrow(
+  expect(() => asyncRuntime.eventBus.dispatch(ChatEvent, new ChatEvent())).toThrow(
     EventThreadingMismatch,
   );
 
@@ -486,7 +525,7 @@ test("a dispatch that disagrees with the declared mode fails loudly in developme
     { development: true },
   );
 
-  expect(() => syncRuntime.eventBus.dispatch(ChatEvent, "async", new ChatEvent())).toThrow(
+  expect(() => syncRuntime.eventBus.dispatch(ChatEvent, new ThreadedChatEvent(true))).toThrow(
     EventThreadingMismatch,
   );
 
@@ -501,7 +540,7 @@ test("the event's own threading decides the mode", async () => {
     { development: true },
   );
 
-  expect(() => runtime.eventBus.dispatch(ChatEvent, "sync", new ThreadedChatEvent(true))).toThrow(
+  expect(() => runtime.eventBus.dispatch(ChatEvent, new ThreadedChatEvent(true))).toThrow(
     EventThreadingMismatch,
   );
 
@@ -515,7 +554,7 @@ test("a mismatched dispatch is skipped outside development", async () => {
     }),
   );
 
-  expect(() => runtime.eventBus.dispatch(ChatEvent, "sync", new ChatEvent())).not.toThrow();
+  expect(() => runtime.eventBus.dispatch(ChatEvent, new ChatEvent())).not.toThrow();
 
   await runtime.dispose();
 });
@@ -542,10 +581,10 @@ test("sync and async attachments of the same event type both work", async () => 
   );
 
   // The hint is deliberately wrong; the event's own threading is authoritative.
-  runtime.eventBus.dispatch(ChatEvent, "async", new ThreadedChatEvent(false));
+  runtime.eventBus.dispatch(ChatEvent, new ThreadedChatEvent(false));
   expect(calls).toEqual(["sync"]);
 
-  runtime.eventBus.dispatch(ChatEvent, "sync", new ThreadedChatEvent(true));
+  runtime.eventBus.dispatch(ChatEvent, new ThreadedChatEvent(true));
   await Effect.runPromise(Deferred.await(asyncCompleted));
   expect(calls).toEqual(["sync", "async"]);
 
