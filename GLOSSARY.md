@@ -26,6 +26,7 @@ EffectMC's domain language, repo-wide. Terms land here when a decision turns on 
 
 - **façade** — a curated EffectMC wrapper over a Paper API that carries its thread capability in `R`. v0 ships four: `Sender`, `Players`, `Worlds`, `Items` (ADR-0006).
 - **EventHandle** — the element `Events.of` yields: a snapshot of the Bukkit event, whose `cancel` requires `SyncWindow` in `R`. There is no nominal event-stream type (ADR-0008).
+- **event bus** — the runtime-owned seam behind `Events`: one listener group per event type × priority × mode, fanning out to attachments and honoring `ignoreCancelled` per attachment (ADR-0023). The Paper host implements it; tests use the in-memory one.
 - **Pdc** — Schema-typed persistent data: a `NamespacedKey` plus a Schema codec, mapped to a `PersistentDataType`. Lives in core (ADR-0009).
 - **raw** — direct Bukkit/Paper access. It compiles and runs, but it is outside the thread checker, so misuse is silent. Documented as the exception, never the pattern.
 - **namespace surface** — the import shape: one namespace object per concept (`Paper.`, `Events.`, `Pdc.`, `Players.`) plus bare tags (`Main`, `AsyncThread`, `SyncWindow`).

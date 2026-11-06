@@ -1,4 +1,5 @@
-import { Effect, Layer, Scope } from "effect";
+import { Effect, Layer, type Scope } from "effect";
+import type { EventBus } from "./event-bus";
 import type { Observability } from "./observability";
 import type { Registry } from "./registry";
 
@@ -7,7 +8,7 @@ import type { Registry } from "./registry";
  * require them without declaring them in its Layer, which is why attach verbs
  * can ask for `Scope` and `Registry` without making the author wire them.
  */
-export type RuntimeServices = Registry | Observability | Scope.Scope;
+export type RuntimeServices = Registry | Observability | EventBus | Scope.Scope;
 
 /**
  * The declarative value a plugin module default-exports (ADR-0001).

@@ -24,6 +24,29 @@ attach work alive in a runtime-owned scope. Tear it down with `dispose()`: it
 closes the scope, empties the Registry, and disposes the Layer runtime.
 Disposal is terminal, so a reload constructs a new `PluginRuntime`.
 
+Events attach through the runtime's event bus. A sync attachment runs before
+the Java listener returns, so `cancel` lands in time; the window closes when
+the handler returns, and a later cancel fails with `AsyncInCancellableHandler`:
+
+```ts
+import { Effect } from "effect";
+import { Events } from "@effectmc/core";
+
+yield* Events.attach(BlockBreakEvent, { mode: "sync", priority: "high" }, (event) =>
+  Effect.gen(function* () {
+    if (!allowed(event.player)) {
+      yield* event.cancel;
+    }
+  }),
+);
+```
+
+Listeners are grouped per event type, priority and mode, so attachments in the
+same combination share one host listener. `ignoreCancelled` is honored per
+attachment, and detaching removes both the attachment and its Registry entry.
+`Events.of` is the read path: it yields the same `EventHandle` elements but
+delivers after the dispatch, so its elements are snapshots.
+
 A program whose requirements its Layer does not satisfy is a compile error.
 Development runtimes warn instead of hanging when a program does not complete.
 Pass `observability` to `PluginRuntime.make` to replace the default console
@@ -31,10 +54,13 @@ layer.
 
 ## Layout
 
-| File               | Contents                                                |
-| ------------------ | ------------------------------------------------------- |
-| `plugin.ts`        | `Plugin()`, the `Plugin` value, and `isPlugin()`        |
-| `runtime.ts`       | `PluginRuntime`, start/dispose, and development warning |
-| `registry.ts`      | The `Registry` service and its in-memory implementation |
-| `observability.ts` | The swappable `Observability` service and default layer |
-| `errors.ts`        | Tagged runtime-state errors                             |
+| File               | Contents                                                       |
+| ------------------ | -------------------------------------------------------------- |
+| `plugin.ts`        | `Plugin()`, the `Plugin` value, and `isPlugin()`               |
+| `runtime.ts`       | `PluginRuntime`, start/dispose, and development warning        |
+| `events.ts`        | `Events.attach` / `Events.of`, `EventHandle`, and dispatch        |
+| `event-bus.ts`     | Listener groups and the host event-bus seam                       |
+| `sync-window.ts`   | The `SyncWindow` capability that gates `EventHandle.cancel`       |
+| `registry.ts`      | The `Registry` service and its in-memory implementation        |
+| `observability.ts` | The swappable `Observability` service and default layer        |
+| `errors.ts`        | Tagged runtime-state and late-cancel errors                    |

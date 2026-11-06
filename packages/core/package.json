@@ -2,7 +2,7 @@
   "name": "@effectmc/core",
   "version": "0.0.0",
   "private": true,
-  "description": "Core runtime for EffectMC: Plugin, PluginRuntime, and the Registry.",
+  "description": "Core runtime for EffectMC: Plugin, PluginRuntime, Events, and the Registry.",
   "files": [
     "dist"
   ],

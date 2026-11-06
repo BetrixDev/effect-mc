@@ -17,3 +17,17 @@ export class RuntimeStateError extends Schema.TaggedError<RuntimeStateError>()(
     message: Schema.String,
   },
 ) {}
+
+/**
+ * Raised by `EventHandle.cancel` when the synchronous dispatch window has
+ * already closed. The type system cannot catch a cancel reached through a fork,
+ * because a forked fiber inherits `SyncWindow`; this error is the runtime
+ * backstop for that one hole (ADR-0010).
+ */
+export class AsyncInCancellableHandler extends Schema.TaggedError<AsyncInCancellableHandler>()(
+  "AsyncInCancellableHandler",
+  {
+    event: Schema.String,
+    message: Schema.String,
+  },
+) {}
