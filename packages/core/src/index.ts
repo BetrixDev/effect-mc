@@ -17,6 +17,7 @@ export {
 } from "./events";
 export {
   EventBus,
+  eventModes,
   eventPriorities,
   type CancellableEvent,
   type EventBusService,
@@ -28,11 +29,26 @@ export {
 } from "./event-bus";
 export { SyncWindow } from "./sync-window";
 export {
+  AsyncThread,
+  immediateMainThread,
+  Main,
+  MainThread,
+  type MainThreadService,
+  type MainValue,
+  type RegionTarget,
+} from "./threads";
+export { Paper } from "./paper";
+export {
   Registry,
   type Registration,
   type RegistrationKind,
   type RegistryService,
 } from "./registry";
 export { Observability, type ObservabilityLevel, type ObservabilityService } from "./observability";
-export { AsyncInCancellableHandler, RuntimeStateError, type RuntimeState } from "./errors";
+export {
+  AsyncInCancellableHandler,
+  EventThreadingMismatch,
+  RuntimeStateError,
+  type RuntimeState,
+} from "./errors";
 export { PluginRuntime, type PluginRuntimeOptions } from "./runtime";

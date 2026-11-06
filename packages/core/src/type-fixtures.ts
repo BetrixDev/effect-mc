@@ -5,9 +5,11 @@
 import { Clock, Context, Effect, Layer } from "effect";
 import { type AsyncInCancellableHandler } from "./errors";
 import { Events, type EventAttachment, type EventHandle, type EventHandler } from "./events";
+import { Paper } from "./paper";
 import { Plugin, type RuntimeServices } from "./plugin";
 import { Registry } from "./registry";
 import { SyncWindow } from "./sync-window";
+import { AsyncThread, Main, MainThread, type RegionTarget } from "./threads";
 
 class Missing extends Context.Service<Missing, void>()("Missing") {}
 
@@ -76,14 +78,12 @@ declare const eventHandle: EventHandle<FakeBlockBreakEvent>;
 
 // Cancelling requires SyncWindow; an effect without it does not typecheck.
 // @ts-expect-error SyncWindow is required to cancel.
-export const cancelWithoutSyncWindow: Effect.Effect<void, AsyncInCancellableHandler> = eventHandle.cancel;
+export const cancelWithoutSyncWindow: Effect.Effect<void, AsyncInCancellableHandler> =
+  eventHandle.cancel;
 
 // With SyncWindow in R, the same value is accepted.
-export const cancelWithSyncWindow: Effect.Effect<
-  void,
-  AsyncInCancellableHandler,
-  SyncWindow
-> = eventHandle.cancel;
+export const cancelWithSyncWindow: Effect.Effect<void, AsyncInCancellableHandler, SyncWindow> =
+  eventHandle.cancel;
 
 // A sync attachment supplies SyncWindow to the handler, so it can cancel even
 // though the program never provides the capability itself.
@@ -117,8 +117,9 @@ export const asyncCancel = () =>
 declare const chatHandle: EventHandle<FakeChatEvent>;
 
 // A non-cancellable event does not expose `cancel` at all.
-// @ts-expect-error FakeChatEvent is not Cancellable.
-export const chatCancel: Effect.Effect<void, AsyncInCancellableHandler, SyncWindow> = chatHandle.cancel;
+export const chatCancel: Effect.Effect<void, AsyncInCancellableHandler, SyncWindow> =
+  // @ts-expect-error FakeChatEvent is not Cancellable.
+  chatHandle.cancel;
 
 // Reading a non-cancellable event still typechecks.
 export const observeChat = () =>
@@ -127,3 +128,70 @@ export const observeChat = () =>
       void event.message;
     }),
   );
+
+// A sync attachment receives Main from the dispatch, so it can use it without
+// the program providing it.
+export const syncAttachmentYieldsMain = () =>
+  Events.attach(FakeBlockBreakEvent, { mode: "sync" }, () =>
+    Effect.gen(function* () {
+      yield* Main;
+    }),
+  );
+
+// An async attachment receives AsyncThread.
+export const asyncAttachmentYieldsAsyncThread = () =>
+  Events.attach(FakeChatEvent, { mode: "async" }, () =>
+    Effect.gen(function* () {
+      yield* AsyncThread;
+    }),
+  );
+
+// A sync attachment does not provide AsyncThread; requiring it stays in R and
+// fails at the Plugin boundary.
+// @ts-expect-error AsyncThread is not provided in sync mode.
+export const syncAttachmentRequiresAsyncThread: Effect.Effect<
+  EventAttachment,
+  never,
+  RuntimeServices
+> = Events.attach(FakeChatEvent, { mode: "sync" }, () => AsyncThread);
+
+declare const needsMain: Effect.Effect<void, never, Main>;
+declare const regionTarget: RegionTarget;
+
+// A Main-requiring effect cannot be used without a hop.
+// @ts-expect-error Main is required.
+export const missingMain: Effect.Effect<void> = needsMain;
+
+// A hop through an entity or location replaces Main with the hop seam.
+export const hopRemovesMain: Effect.Effect<void, never, MainThread> = Paper.on(
+  regionTarget,
+  needsMain,
+);
+
+// The runtime supplies MainThread, so a hop is satisfied inside a program.
+export const hopWithRuntimeServices: Effect.Effect<void, never, RuntimeServices> = Paper.on(
+  regionTarget,
+  needsMain,
+);
+
+// The same hop typechecks inside an async handler.
+export const asyncHandlerHops = () =>
+  Events.attach(FakeChatEvent, { mode: "async" }, () =>
+    Paper.on(
+      regionTarget,
+      Effect.gen(function* () {
+        yield* Main;
+        yield* AsyncThread;
+      }),
+    ),
+  );
+
+// An async handler cannot ask for Main directly; it must hop.
+const requiringMain: EventHandler<FakeChatEvent, never, Main> = () =>
+  Effect.gen(function* () {
+    yield* Main;
+  });
+
+export const asyncRequiresMain = () =>
+  // @ts-expect-error Async attachments do not provide Main.
+  Events.attach(FakeChatEvent, { mode: "async" }, requiringMain);

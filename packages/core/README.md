@@ -41,14 +41,35 @@ the handler returns, and a later cancel fails with `AsyncInCancellableHandler`:
 import { Effect } from "effect";
 import { Events } from "@effectmc/core";
 
-yield* Events.attach(BlockBreakEvent, { mode: "sync", priority: "high" }, (event) =>
-  Effect.gen(function* () {
-    if (!allowed(event.player)) {
-      yield* event.cancel;
-    }
-  }),
-);
+const protect = Effect.gen(function* () {
+  yield* Events.attach(BlockBreakEvent, { mode: "sync" }, (event) =>
+    Effect.gen(function* () {
+      if (!allowed(event.player)) {
+        yield* event.cancel;
+      }
+    }),
+  );
+});
 ```
+
+An async attachment runs with `AsyncThread`, not `Main`, so it cannot cancel or
+touch the world directly. Hop with `Paper.on(player, effect)` when it needs
+`Main`:
+
+```ts
+const observeChat = Effect.gen(function* () {
+  yield* Events.attach(AsyncChatEvent, { mode: "async" }, (event) =>
+    Effect.gen(function* () {
+      yield* AsyncThread;
+      yield* Paper.on(event.getPlayer(), sendReply(event));
+    }),
+  );
+});
+```
+
+Paper can fire an event on a thread its class does not suggest. In development
+a dispatch whose actual threading disagrees with the attachment's declared mode
+throws `EventThreadingMismatch`; production skips the mismatched group.
 
 Listeners are grouped per event type, priority and mode, so attachments in the
 same combination share one host listener. `ignoreCancelled` is honored per
@@ -63,14 +84,16 @@ the warning window is server time too. Pass `observability` to
 
 ## Layout
 
-| File               | Contents                                                       |
-| ------------------ | -------------------------------------------------------------- |
-| `plugin.ts`        | `Plugin()`, the `Plugin` value, and `isPlugin()`               |
-| `runtime.ts`       | `PluginRuntime`, start/dispose, and development warning        |
-| `clock.ts`         | `TickClock`, tick-driven Effect time                           |
-| `events.ts`        | `Events.attach` / `Events.of`, `EventHandle`, and dispatch      |
-| `event-bus.ts`     | Listener groups and the host event-bus seam                     |
-| `sync-window.ts`   | The `SyncWindow` capability that gates `EventHandle.cancel`     |
-| `registry.ts`      | The `Registry` service and its in-memory implementation        |
-| `observability.ts` | The swappable `Observability` service and default layer        |
-| `errors.ts`        | Tagged runtime-state and late-cancel errors                    |
+| File               | Contents                                                    |
+| ------------------ | ----------------------------------------------------------- |
+| `plugin.ts`        | `Plugin()`, the `Plugin` value, and `isPlugin()`            |
+| `runtime.ts`       | `PluginRuntime`, start/dispose, and development warning     |
+| `clock.ts`         | `TickClock`, tick-driven Effect time                        |
+| `events.ts`        | `Events.attach` / `Events.of`, `EventHandle`, and dispatch  |
+| `event-bus.ts`     | Listener groups and the host event-bus seam                 |
+| `sync-window.ts`   | The `SyncWindow` capability that gates `EventHandle.cancel` |
+| `threads.ts`       | `Main`, `AsyncThread`, and the `MainThread` hop seam        |
+| `paper.ts`         | `Paper.on`, the hop into `Main`                             |
+| `registry.ts`      | The `Registry` service and its in-memory implementation     |
+| `observability.ts` | The swappable `Observability` service and default layer     |
+| `errors.ts`        | Tagged runtime-state and late-cancel errors                 |
