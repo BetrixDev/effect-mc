@@ -17,8 +17,12 @@ export interface Registration {
 }
 
 export interface RegistryService {
-  /** Records an attachment. */
-  readonly add: (registration: Registration) => void;
+  /**
+   * Records an attachment and returns an idempotent removal closure. Detaching
+   * a listener or task calls the closure so the Registry keeps matching what is
+   * actually attached.
+   */
+  readonly add: (registration: Registration) => () => void;
   readonly entries: () => ReadonlyArray<Registration>;
   /** Empties the Registry. Teardown calls this after the runtime scope closes. */
   readonly clear: () => void;
@@ -37,6 +41,12 @@ export const makeRegistry = (): RegistryService => {
   return {
     add: (registration) => {
       registrations.push(registration);
+      return () => {
+        const index = registrations.indexOf(registration);
+        if (index >= 0) {
+          registrations.splice(index, 1);
+        }
+      };
     },
     entries: () => registrations.slice(),
     clear: () => {

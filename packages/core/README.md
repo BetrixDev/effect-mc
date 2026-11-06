@@ -1,7 +1,7 @@
 # @effectmc/core
 
-The plugin entry point, runtime, tick-driven clock, Registry, and observability
-seam.
+The plugin entry point, runtime, tick-driven clock, Registry, event surface,
+and observability seam.
 
 A plugin module default-exports one declarative value (ADR-0001):
 
@@ -33,6 +33,29 @@ once per server tick. A paused or stopped server simply stops advancing, so
 `Effect.sleep`, schedules, and timeouts freeze with it. Tests advance the same
 clock explicitly instead of waiting.
 
+Events attach through the runtime's event bus. A sync attachment runs before
+the Java listener returns, so `cancel` lands in time; the window closes when
+the handler returns, and a later cancel fails with `AsyncInCancellableHandler`:
+
+```ts
+import { Effect } from "effect";
+import { Events } from "@effectmc/core";
+
+yield* Events.attach(BlockBreakEvent, { mode: "sync", priority: "high" }, (event) =>
+  Effect.gen(function* () {
+    if (!allowed(event.player)) {
+      yield* event.cancel;
+    }
+  }),
+);
+```
+
+Listeners are grouped per event type, priority and mode, so attachments in the
+same combination share one host listener. `ignoreCancelled` is honored per
+attachment, and detaching removes both the attachment and its Registry entry.
+`Events.of` is the read path: it yields the same `EventHandle` elements but
+delivers after the dispatch, so its elements are snapshots.
+
 A program whose requirements its Layer does not satisfy is a compile error.
 Development runtimes warn instead of hanging when a program does not complete;
 the warning window is server time too. Pass `observability` to
@@ -40,11 +63,14 @@ the warning window is server time too. Pass `observability` to
 
 ## Layout
 
-| File               | Contents                                                |
-| ------------------ | ------------------------------------------------------- |
-| `plugin.ts`        | `Plugin()`, the `Plugin` value, and `isPlugin()`        |
-| `runtime.ts`       | `PluginRuntime`, start/dispose, and development warning |
-| `clock.ts`         | `TickClock`, tick-driven Effect time                    |
-| `registry.ts`      | The `Registry` service and its in-memory implementation |
-| `observability.ts` | The swappable `Observability` service and default layer |
-| `errors.ts`        | Tagged runtime-state errors                             |
+| File               | Contents                                                       |
+| ------------------ | -------------------------------------------------------------- |
+| `plugin.ts`        | `Plugin()`, the `Plugin` value, and `isPlugin()`               |
+| `runtime.ts`       | `PluginRuntime`, start/dispose, and development warning        |
+| `clock.ts`         | `TickClock`, tick-driven Effect time                           |
+| `events.ts`        | `Events.attach` / `Events.of`, `EventHandle`, and dispatch      |
+| `event-bus.ts`     | Listener groups and the host event-bus seam                     |
+| `sync-window.ts`   | The `SyncWindow` capability that gates `EventHandle.cancel`     |
+| `registry.ts`      | The `Registry` service and its in-memory implementation        |
+| `observability.ts` | The swappable `Observability` service and default layer        |
+| `errors.ts`        | Tagged runtime-state and late-cancel errors                    |

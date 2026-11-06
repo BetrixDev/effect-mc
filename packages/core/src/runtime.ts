@@ -1,6 +1,7 @@
 import { Clock, Duration, Effect, Fiber, Layer, ManagedRuntime, Option, Scope } from "effect";
 import { TickClock } from "./clock";
 import { RuntimeStateError, type RuntimeState } from "./errors";
+import { EventBus, makeEventBus, type EventBusService } from "./event-bus";
 import { Observability } from "./observability";
 import { type Plugin, type RuntimeServices } from "./plugin";
 import { makeRegistry, type RegistryService, Registry } from "./registry";
@@ -15,6 +16,8 @@ export interface PluginRuntimeOptions {
   readonly programTimeout?: Duration.Input;
   /** Replaces the default console observability layer. */
   readonly observability?: Layer.Layer<Observability, never, never>;
+  /** Replaces the default in-memory event bus. Hosts supply their own. */
+  readonly eventBus?: EventBusService;
   /**
    * The tick clock the program reads time from. Defaults to a new clock that
    * only moves when its host calls `advance`.
@@ -40,6 +43,8 @@ const isDevelopmentEnvironment = (): boolean =>
 export class PluginRuntime<R = never, E = never> {
   readonly plugin: Plugin<R, E>;
   readonly registry: RegistryService;
+  /** The event bus the program attached to. Hosts dispatch into it. */
+  readonly eventBus: EventBusService;
   /** The clock the program reads and the host advances once per server tick. */
   readonly clock: TickClock;
 
@@ -54,6 +59,7 @@ export class PluginRuntime<R = never, E = never> {
   private constructor(plugin: Plugin<R, E>, options: PluginRuntimeOptions) {
     this.plugin = plugin;
     this.registry = makeRegistry();
+    this.eventBus = options.eventBus ?? makeEventBus();
     this.clock = options.clock ?? new TickClock();
     this.development = options.development ?? isDevelopmentEnvironment();
     this.programTimeout = options.programTimeout ?? DEFAULT_PROGRAM_TIMEOUT;
@@ -92,6 +98,7 @@ export class PluginRuntime<R = never, E = never> {
     const runtimeLayer = Layer.mergeAll(
       this.plugin.layer,
       Layer.succeed(Registry, this.registry),
+      Layer.succeed(EventBus, this.eventBus),
       this.observability,
       Layer.succeed(Clock.Clock, this.clock.clock),
     );
@@ -161,6 +168,7 @@ export class PluginRuntime<R = never, E = never> {
       }
     } finally {
       this.registry.clear();
+      this.eventBus.clear();
     }
   }
 }

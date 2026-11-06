@@ -23,3 +23,18 @@ test("returns a snapshot rather than the live record", () => {
 
   expect(registry.entries()).toEqual([{ kind: "task", name: "warp" }]);
 });
+
+test("removes a registration without disturbing the others", () => {
+  const registry = makeRegistry();
+  const listener = { kind: "listener", name: "BlockBreakEvent" } as const;
+  const task = { kind: "task", name: "sweep" } as const;
+  const removeListener = registry.add(listener);
+  registry.add(task);
+
+  removeListener();
+
+  expect(registry.entries()).toEqual([task]);
+
+  removeListener();
+  expect(registry.entries()).toEqual([task]);
+});
