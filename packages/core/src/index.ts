@@ -1,10 +1,15 @@
 /**
  * @effectmc/core
  *
- * Placeholder for the EffectMC core runtime.
- *
- * The v0 surface will provide the plugin entry point, Effect Layers, typed
- * events, commands, persistent data, thread boundaries, and the teardown
- * Registry. Nothing is implemented yet.
+ * The plugin entry point, runtime, Registry, and observability seam.
  */
-export const PACKAGE_NAME = "@effectmc/core";
+export { isPlugin, Plugin, type RuntimeServices } from "./plugin";
+export {
+  Registry,
+  type Registration,
+  type RegistrationKind,
+  type RegistryService,
+} from "./registry";
+export { Observability, type ObservabilityLevel, type ObservabilityService } from "./observability";
+export { RuntimeStateError, type RuntimeState } from "./errors";
+export { PluginRuntime, type PluginRuntimeOptions } from "./runtime";

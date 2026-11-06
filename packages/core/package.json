@@ -2,7 +2,7 @@
   "name": "@effectmc/core",
   "version": "0.0.0",
   "private": true,
-  "description": "Core runtime for EffectMC. Placeholder package.",
+  "description": "Core runtime for EffectMC: Plugin, PluginRuntime, and the Registry.",
   "files": [
     "dist"
   ],
@@ -18,6 +18,9 @@
   "scripts": {
     "build": "vp pack",
     "test": "vp test"
+  },
+  "dependencies": {
+    "effect": "4.1.2"
   },
   "devDependencies": {
     "typescript": "^6.0.3",

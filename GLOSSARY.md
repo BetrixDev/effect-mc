@@ -6,14 +6,16 @@ EffectMC's domain language, repo-wide. Terms land here when a decision turns on 
 
 - **plugin module** — the TypeScript entry file the host evaluates. Its default export is the `Plugin` value. One module per Paper plugin.
 - **Plugin** — the declarative value a plugin module exports: a name, the Layers that satisfy its requirements, and a finite program. Distinct from `JavaPlugin`, Paper's own object, which authors reach only through `PluginRef`.
+- **plugin runtime** — the `PluginRuntime` value that builds the plugin's Layer, runs its program, and owns the scope for everything the program attached. Disposal is terminal; a restart constructs a new plugin runtime.
 - **program** — the finite `Effect` passed to `Plugin`. It installs registrations and then completes. A program that blocks is not a program; a long-lived stream belongs in an attach.
 - **attach** — the single registration verb. `Events.attach`, `Commands.attach`, `Tasks.attach` install something into the Registry for the plugin's lifetime and return a handle. Attaching forks scoped; the program still completes.
-- **Registry** — the host-side record of everything a plugin added: listeners, tasks, commands, permissions, open GUIs. Teardown empties it before `context.close`.
+- **Registry** — the host-side record of everything a plugin attached: listeners, tasks, and open GUIs. Teardown empties it before `context.close`. Commands are not recorded because they cannot be unregistered.
+- **registration** — one entry in the Registry. Commands are not registrations; they are re-registered on reload (ADR-0011).
 - **caveated reload** — dispose the runtime, empty the Registry, close the Context, open a new Context, start the plugin module again. Never called hot module reload, and never called production-safe until the 50× leak spike passes.
 
 ## Threads
 
-- **capability** — a requirement in `R` that states *where* code may run, as opposed to a hop that moves it. `Main` and `AsyncThread` are capabilities.
+- **capability** — a requirement in `R` that states _where_ code may run, as opposed to a hop that moves it. `Main` and `AsyncThread` are capabilities.
 - **Main** — capability: Bukkit world APIs are legal here. Carries the region payload from day one (ADR-0007).
 - **region** — the `Main` payload naming the entity or location that owns the region. Always absent on Paper; reserved for Folia.
 - **AsyncThread** — capability: an async Bukkit context, with a time budget and no world access.
@@ -38,6 +40,7 @@ EffectMC's domain language, repo-wide. Terms land here when a decision turns on 
 ## Errors
 
 - **Renderer** — the swappable service that turns a tagged error into an Adventure component at a command or event boundary.
+- **Observability** — the swappable service that receives runtime diagnostics, such as the warning that a program did not complete. The default layer writes to the server log.
 - **boundary** — where a program's failure meets a player: the command executor, the sync event dispatch, the async event dispatch. Each has a different failure policy.
 
 ## Writing rules
