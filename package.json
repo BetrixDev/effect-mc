@@ -13,7 +13,8 @@
     "check": "vp check",
     "fmt": "vp fmt",
     "lint": "vp lint",
-    "test": "vp test"
+    "test": "vp test",
+    "generate:allow-list": "node host/scripts/generate-allow-list.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

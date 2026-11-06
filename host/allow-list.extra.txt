@@ -1,0 +1,3 @@
+# Hand-maintained Java classes exposed to containers, one fully-qualified name
+# per line. Generated Paper classes belong in the generated allow-list; only add
+# an entry here when a curated EffectMC type is not derivable from Paper typings.

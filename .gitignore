@@ -6,8 +6,11 @@ apps/docs/.vitepress/dist
 .vitepress-dev.log
 .vitepress-dev.log.err
 *.tsbuildinfo
+host/.gradle
+host/build
 
 .DS_Store
 .env
 .env.local
 .vitest/
+.humanlayer/
