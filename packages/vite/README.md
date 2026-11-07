@@ -5,6 +5,8 @@ bundled ES module (`plugin.mjs`) plus the manifest the host reads
 (`plugin.json`). ADR-0015 explains why a container is a loose directory in
 development and a packed jar for distribution.
 
+Requires Vite 8 (Rolldown) or Vite+ in library mode.
+
 ## Usage
 
 ```ts

@@ -105,7 +105,7 @@ export class PaperServerHost implements ServerHost {
   }
 
   async start(target: ServerTarget, signal?: AbortSignal): Promise<RunningServer> {
-    if (signal?.aborted === true) {
+    if (isAborted(signal)) {
       throw new Error("effectmc dev was interrupted.");
     }
 
@@ -130,6 +130,11 @@ export class PaperServerHost implements ServerHost {
     } catch (error) {
       await process.kill();
       throw error;
+    }
+
+    if (isAborted(signal)) {
+      await process.kill();
+      throw new Error("effectmc dev was interrupted.");
     }
 
     let connection: RconConnection;
@@ -270,7 +275,7 @@ export class PaperServerHost implements ServerHost {
         void process.kill();
       };
 
-      if (signal?.aborted === true) {
+      if (isAborted(signal)) {
         onAbort();
         return;
       }
@@ -310,6 +315,10 @@ export class PaperServerHost implements ServerHost {
       });
     });
   }
+}
+
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
 }
 
 function acceptEula(directory: string, log: Logger): void {
