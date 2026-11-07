@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import type { EventListenerRegistration } from "@effectmc/core";
+import { EventThreadingMismatch, type EventListenerRegistration } from "@effectmc/core";
 import { makeFakeEventBus } from "./fake-events";
 
 class PingEvent {
@@ -47,4 +47,27 @@ test("starts empty and clears every listener", () => {
   bus.clear();
 
   expect(bus.listeners()).toEqual([]);
+});
+
+const asyncEvent = () => ({ isAsynchronous: () => true });
+
+test("a development bus fails loudly when the dispatch disagrees with the mode", () => {
+  const bus = makeFakeEventBus({ development: true });
+  bus.add(listener(() => undefined));
+
+  expect(() => bus.dispatch(PingEvent, asyncEvent())).toThrow(EventThreadingMismatch);
+});
+
+test("a production bus skips the group whose mode does not match the dispatch", () => {
+  const bus = makeFakeEventBus();
+  const seen: Array<string> = [];
+  bus.add(
+    listener((event) => {
+      seen.push((event as PingEvent).id);
+    }),
+  );
+
+  bus.dispatch(PingEvent, asyncEvent());
+
+  expect(seen).toEqual([]);
 });

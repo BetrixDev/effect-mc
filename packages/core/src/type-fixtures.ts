@@ -3,7 +3,9 @@
  * `tsc --noEmit`; the `@ts-expect-error` disappears if a constraint is lost.
  */
 import { Clock, Context, Effect, Layer } from "effect";
+import type { AsyncChatEvent, Entity, Location, Player } from "@effectmc/paper-types";
 import { type AsyncInCancellableHandler } from "./errors";
+import { type EventClass } from "./event-bus";
 import { Events, type EventAttachment, type EventHandle, type EventHandler } from "./events";
 import { Paper } from "./paper";
 import { Plugin, type RuntimeServices } from "./plugin";
@@ -195,3 +197,88 @@ const requiringMain: EventHandler<FakeChatEvent, never, Main> = () =>
 export const asyncRequiresMain = () =>
   // @ts-expect-error Async attachments do not provide Main.
   Events.attach(FakeChatEvent, { mode: "async" }, requiringMain);
+
+// The mode is explicit, so omitting it does not typecheck (ADR-0012).
+export const attachWithoutMode = () =>
+  // @ts-expect-error An attachment must declare sync or async.
+  Events.attach(FakeChatEvent, {}, () => Effect.void);
+
+// --- The same contract against Paper's pinned typings ---
+
+/** A Paper event class value; attach only reads its prototype type. */
+declare const asyncChatEvent: EventClass<AsyncChatEvent>;
+declare const player: Player;
+declare const entity: Entity;
+declare const location: Location;
+
+// An async attachment of Paper's real chat event receives AsyncThread.
+export const asyncChatAttachment = () =>
+  Events.attach(asyncChatEvent, { mode: "async" }, (event) =>
+    Effect.gen(function* () {
+      yield* AsyncThread;
+      void event.message();
+    }),
+  );
+
+// AsyncChatEvent is cancellable, but an async attachment gets no SyncWindow,
+// so cancelling it does not typecheck (ADR-0010, ADR-0012).
+const cancellingChatHandler: EventHandler<AsyncChatEvent, AsyncInCancellableHandler, SyncWindow> = (
+  event,
+) =>
+  Effect.gen(function* () {
+    yield* event.cancel;
+  });
+
+export const asyncChatCancel = () =>
+  // @ts-expect-error Async attachments do not receive SyncWindow.
+  Events.attach(asyncChatEvent, { mode: "async" }, cancellingChatHandler);
+
+// The same event attached in sync mode gets Main and the cancel window,
+// because AsyncChatEvent sometimes fires synchronously (ADR-0012).
+export const syncChatAttachment = () =>
+  Events.attach(asyncChatEvent, { mode: "sync" }, (event) =>
+    Effect.gen(function* () {
+      yield* Main;
+      yield* event.cancel;
+    }),
+  );
+
+// A program may attach the same event type in both modes; each dispatch goes
+// to the branch whose declared mode matches its threading (ADR-0012).
+export const bothChatModes = () =>
+  Effect.gen(function* () {
+    yield* Events.attach(asyncChatEvent, { mode: "sync" }, (event) =>
+      Effect.sync(() => {
+        void event.getPlayer();
+      }),
+    );
+    yield* Events.attach(asyncChatEvent, { mode: "async" }, (event) =>
+      Effect.gen(function* () {
+        yield* AsyncThread;
+        yield* Paper.on(event.getPlayer(), Effect.void);
+      }),
+    );
+  });
+
+// A hop accepts a player, an entity, or a location (ADR-0007).
+export const hopThroughPlayer: Effect.Effect<void, never, MainThread> = Paper.on(player, needsMain);
+
+export const hopThroughEntity: Effect.Effect<void, never, MainThread> = Paper.on(entity, needsMain);
+
+export const hopThroughLocation: Effect.Effect<void, never, MainThread> = Paper.on(
+  location,
+  needsMain,
+);
+
+// The hop typechecks inside an async handler and leaves MainThread, which the
+// runtime supplies, as its only requirement.
+export const asyncChatHandlerHops = () =>
+  Events.attach(asyncChatEvent, { mode: "async" }, (event) =>
+    Paper.on(
+      event.getPlayer(),
+      Effect.gen(function* () {
+        yield* Main;
+        yield* AsyncThread;
+      }),
+    ),
+  );

@@ -8,7 +8,6 @@ import {
 } from "@effectmc/core";
 import { Duration, Effect, Layer } from "effect";
 import { LeakedRegistrations, ProgramDidNotComplete } from "./errors";
-import { makeFakeEventBus } from "./fake-events";
 import { makeFakePdc, type FakePdc } from "./fake-pdc";
 import { makeFakeRegistry, type FakeRegistry } from "./fake-registry";
 import { makeFakeSender, type FakeSender } from "./fake-sender";
@@ -47,7 +46,6 @@ export class TestHarness<R = never, E = never> {
   readonly plugin: Plugin<R, E>;
   readonly runtime: PluginRuntime<R, E>;
   readonly registry: FakeRegistry;
-  readonly events: EventBusService;
   readonly clock: TickClock;
   readonly scheduler: FakeScheduler;
   readonly sender: FakeSender;
@@ -66,7 +64,6 @@ export class TestHarness<R = never, E = never> {
     this.programTimeoutMillis = timeoutMillis;
 
     this.registry = makeFakeRegistry();
-    this.events = makeFakeEventBus();
     this.clock = new TickClock();
     this.scheduler = new FakeScheduler(this.clock);
     this.sender = makeFakeSender();
@@ -75,7 +72,6 @@ export class TestHarness<R = never, E = never> {
     this.runtime = PluginRuntime.make(plugin, {
       development: options.development,
       observability: options.observability ?? silentObservability,
-      eventBus: this.events,
       clock: this.clock,
       registry: this.registry,
       mainThread: options.mainThread,
@@ -84,6 +80,15 @@ export class TestHarness<R = never, E = never> {
 
   static make<R, E>(plugin: Plugin<R, E>, options: TestHarnessOptions = {}): TestHarness<R, E> {
     return new TestHarness(plugin, options);
+  }
+
+  /**
+   * The in-memory event bus the runtime created. The runtime owns it so the
+   * harness inherits the same development policy as production wiring; a
+   * supplied bus would otherwise silently opt out of the threading check.
+   */
+  get events(): EventBusService {
+    return this.runtime.eventBus;
   }
 
   /**

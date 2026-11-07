@@ -43,7 +43,7 @@ lifetime-managed and is reported as a leak.
 | ------------------ | ------------------------------------------------------------- |
 | `FakeClock`        | The production `TickClock`; time moves only through `advance` |
 | `FakeScheduler`    | Advances a clock and lets woken fibers run                    |
-| `makeFakeEventBus` | The in-memory event bus shared with the core tests            |
+| `makeFakeEventBus` | The in-memory event bus; `{ development }` selects its policy |
 | `makeFakeRegistry` | An inspectable Registry that records what teardown found      |
 | `makeFakeSender`   | A command sender that records rendered messages               |
 | `makeFakePdc`      | An in-memory persistent data container                        |
@@ -51,6 +51,22 @@ lifetime-managed and is reported as a leak.
 The harness exposes the same instances as `clock`, `scheduler`, `events`,
 `registry`, `sender`, and `pdc`. `sender` and `pdc` are standalone fakes today;
 the façades that consume them arrive in later layers.
+
+`events` is the bus the runtime created, so the harness inherits the runtime's
+development policy. With `development: true` (or `NODE_ENV` set to
+`development`/`test`), dispatching an event whose `isAsynchronous()` disagrees
+with the attachment's declared mode throws `EventThreadingMismatch`; production
+skips the mismatched group instead. A standalone `makeFakeEventBus` takes the
+same `{ development }` option and is production-shaped by default.
+
+```ts
+const harness = TestHarness.make(plugin, { development: true });
+
+await harness.start();
+
+// ChatEvent carries isAsynchronous(); true dispatches to the async branch.
+harness.events.dispatch(ChatEvent, new ChatEvent("hello", true));
+```
 
 Scheduled work and sleeps use the harness clock, so tests advance time
 explicitly:

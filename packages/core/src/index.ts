@@ -21,6 +21,7 @@ export {
   eventPriorities,
   makeEventBus,
   type CancellableEvent,
+  type EventBusOptions,
   type EventBusService,
   type EventClass,
   type EventListener,
