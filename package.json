@@ -8,7 +8,7 @@
   "type": "module",
   "scripts": {
     "dev": "vp run @effectmc/docs#dev",
-    "build": "vp run -r build",
+    "build": "vp run @effectmc/vite#build && vp run -r build",
     "preview": "vp run @effectmc/docs#preview",
     "check": "vp check",
     "fmt": "vp fmt",
