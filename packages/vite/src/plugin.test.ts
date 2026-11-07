@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -98,6 +98,45 @@ test("bundles a dependency even when the author marks it external", async () => 
   };
   expect(plugin.greet()).toBe("still bundled");
 });
+
+test(
+  "bundles a real workspace dependency instead of externalising it",
+  { timeout: 20_000 },
+  async () => {
+    const root = await mkdtemp(join(process.cwd(), ".effectmc-vite-test-"));
+    try {
+      await writeFile(
+        join(root, "package.json"),
+        JSON.stringify({ name: "hello", version: "0.1.0", type: "module" }),
+      );
+      await mkdir(join(root, "src"));
+      await writeFile(
+        join(root, "src", "index.ts"),
+        [
+          'import { Effect } from "effect";',
+          'export default { name: "hello", isEffect: Effect.isEffect(Effect.void) };',
+        ].join("\n"),
+      );
+
+      await build({
+        root,
+        configFile: false,
+        logLevel: "silent",
+        plugins: [effectmc()],
+        build: { outDir: "container" },
+      });
+
+      const module = await readFile(join(root, "container", "plugin.mjs"), "utf8");
+      expect(module).not.toMatch(/^import\s/m);
+      const plugin = (await importDefault(join(root, "container", "plugin.mjs"))) as {
+        isEffect: boolean;
+      };
+      expect(plugin.isEffect).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
 
 test("forces one ES output even when the author asks for another format", async () => {
   const root = await project(
