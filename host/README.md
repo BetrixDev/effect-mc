@@ -34,6 +34,20 @@ plugins/EffectMC/hello/
   plugin.mjs
 ```
 
+For distribution the same container is a packed jar directly under the
+container root:
+
+```
+plugins/EffectMC/hello.jar
+  plugin.json
+  plugin.mjs
+```
+
+Drop the jar into `plugins/EffectMC/`; discovery reads it through the same
+`Container` interface as a loose directory, so no extra install step exists.
+The jar file name must match the manifest `name`, just as the loose directory
+name does.
+
 `plugin.json`:
 
 ```json
@@ -45,7 +59,9 @@ plugins/EffectMC/hello/
 ```
 
 `entry` is optional and defaults to `plugin.mjs`. The manifest name must match
-the directory name and use lowercase letters, digits, `-` or `_`.
+the directory or jar name and use lowercase letters, digits, `-` or `_`.
+Discovery reports a malformed manifest as a warning with the artifact path and
+the problem, rather than an uncaught stack trace.
 
 `plugin.mjs` is a bundled ES module. It must default-export the `Plugin` value
 and may write to the server log through either `console` or `effectmc`:
@@ -58,6 +74,20 @@ export default { name: "hello" };
 
 Each container gets its own `Context` and its own thread. A JavaScript value
 never crosses a Context boundary.
+
+## Packing a container
+
+`gradlew packContainer` packs `examples/hello-container` into
+`build/containers/hello.jar`. Point it at another loose container with:
+
+```bash
+gradlew packContainer -Pcontainer=path/to/hello-container
+```
+
+The output is named from the validated manifest, contains exactly
+`plugin.json` and the bundled module, and is written through a temporary file
+so a failed pack never leaves a partial jar behind. The jar is also produced by
+`gradlew assemble`.
 
 ## Reload
 
@@ -79,7 +109,9 @@ are re-registered when the program runs again; no command unregistration is
 attempted because Paper offers no such API. A module that cannot be read leaves
 the running Context untouched, while a module that fails to evaluate leaves that
 container stopped until a later reload succeeds. Reload re-reads the module; a
-manifest change such as a new name or version still needs a server restart.
+packed container's archive is opened again on every read, so replacing
+`<name>.jar` and reloading picks up the new module. A manifest change such as a
+new name or version still needs a server restart.
 
 ## Java class lookup
 

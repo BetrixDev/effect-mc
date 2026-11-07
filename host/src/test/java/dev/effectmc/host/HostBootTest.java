@@ -108,4 +108,27 @@ class HostBootTest {
             assertTrue(log.contains(java.util.logging.Level.SEVERE, "must default-export a Plugin value"), log.joined());
         }
     }
+
+    @Test
+    void skipsAMalformedPackedContainerAndLoadsTheRest() throws IOException {
+        TestContainers.write(plugins, "good", """
+                effectmc.log("good loaded");
+                export default { name: "good" };
+                """);
+        TestContainers.writeJar(
+                plugins.resolve("EffectMC").resolve("broken.jar"),
+                "{not json",
+                java.util.Map.of("plugin.mjs", "export default { name: 'broken' };"));
+
+        RecordingLog log = new RecordingLog();
+
+        try (HostBoot boot = new HostBoot(plugins, log.logger())) {
+            boot.start();
+
+            assertEquals(java.util.List.of("good"), boot.loadedContainers());
+            assertTrue(log.contains(java.util.logging.Level.WARNING, "Malformed plugin.json"), log.joined());
+            assertTrue(log.contains(java.util.logging.Level.WARNING, "broken.jar"), log.joined());
+            assertTrue(log.lines().stream().noneMatch(line -> line.contains("SEVERE")), log.joined());
+        }
+    }
 }

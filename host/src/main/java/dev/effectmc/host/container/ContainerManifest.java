@@ -6,7 +6,6 @@ import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 
 import java.io.IOException;
-import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,64 +26,111 @@ public record ContainerManifest(String name, String version, String entry) {
     private static final Pattern VERSION = Pattern.compile("[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}");
     private static final Pattern ENTRY = Pattern.compile("[A-Za-z0-9._-]{1,128}");
 
+    /** Reads and validates {@code plugin.json} inside a loose container directory. */
     public static ContainerManifest read(Path directory) throws ContainerException {
+        ContainerManifest manifest = readSource(directory);
+        Path directoryName = directory.getFileName();
+        if (directoryName == null) {
+            return manifest;
+        }
+        return requireName(manifest, directoryName.toString(), "directory name '" + directoryName + "'");
+    }
+
+    /**
+     * Reads and validates a build source directory. Unlike a deployed loose
+     * container, a build source directory does not have to be named after the
+     * manifest; the output jar is named from the manifest.
+     */
+    static ContainerManifest readForPacking(Path directory) throws ContainerException {
+        return readSource(directory);
+    }
+
+    private static ContainerManifest readSource(Path directory) throws ContainerException {
         Path manifestPath = directory.resolve(FILE_NAME);
         if (!Files.isRegularFile(manifestPath)) {
             throw new ContainerException("Missing " + FILE_NAME + " in " + directory);
         }
 
-        JsonObject json;
-        try (Reader reader = Files.newBufferedReader(manifestPath, StandardCharsets.UTF_8)) {
-            JsonElement element = JsonParser.parseReader(reader);
-            if (!element.isJsonObject()) {
-                throw new ContainerException(FILE_NAME + " in " + directory + " must contain a JSON object");
-            }
-            json = element.getAsJsonObject();
-        } catch (JsonParseException e) {
-            throw new ContainerException("Malformed " + FILE_NAME + " in " + directory + ": " + e.getMessage(), e);
+        String json;
+        try {
+            json = Files.readString(manifestPath, StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new ContainerException("Could not read " + manifestPath + ": " + e.getMessage(), e);
         }
 
-        String name = requiredString(json, "name", directory);
-        String version = requiredString(json, "version", directory);
-        String entry = optionalString(json, "entry", directory, DEFAULT_ENTRY);
+        return parse(json, directory.toString());
+    }
+
+    /**
+     * Validates manifest text read from any container shape.
+     *
+     * @param origin the directory or jar the manifest came from, for messages
+     */
+    static ContainerManifest parse(String json, String origin) throws ContainerException {
+        JsonObject object;
+        try {
+            JsonElement element = JsonParser.parseString(json);
+            if (!element.isJsonObject()) {
+                throw new ContainerException(FILE_NAME + " in " + origin + " must contain a JSON object");
+            }
+            object = element.getAsJsonObject();
+        } catch (JsonParseException e) {
+            throw new ContainerException("Malformed " + FILE_NAME + " in " + origin + ": " + e.getMessage(), e);
+        }
+
+        String name = requiredString(object, "name", origin);
+        String version = requiredString(object, "version", origin);
+        String entry = optionalString(object, "entry", origin, DEFAULT_ENTRY);
 
         if (!NAME.matcher(name).matches()) {
             throw new ContainerException(
-                    "Invalid container name '" + name + "' in " + manifestPath
+                    "Invalid container name '" + name + "' in " + origin
                             + ": use lowercase letters, digits, '-' or '_' (maximum 64 characters)");
         }
         if (!VERSION.matcher(version).matches()) {
             throw new ContainerException(
-                    "Invalid container version '" + version + "' in " + manifestPath
+                    "Invalid container version '" + version + "' in " + origin
                             + ": use letters, digits, '.', '+', '-' or '_' (maximum 64 characters)");
         }
         if (!ENTRY.matcher(entry).matches() || entry.equals(".") || entry.equals("..")) {
             throw new ContainerException(
-                    "Invalid entry '" + entry + "' in " + manifestPath
-                            + ": use a plain file name inside the container directory");
+                    "Invalid entry '" + entry + "' in " + origin
+                            + ": use a plain file name inside the container");
         }
-
-        Path directoryName = directory.getFileName();
-        if (directoryName != null && !directoryName.toString().equals(name)) {
+        if (entry.equals(FILE_NAME)) {
             throw new ContainerException(
-                    "Container name '" + name + "' in " + manifestPath
-                            + " must match its directory name '" + directoryName + "'");
+                    "Invalid entry '" + entry + "' in " + origin
+                            + ": the entry must be the bundled module, not the manifest");
         }
 
         return new ContainerManifest(name, version, entry);
     }
 
-    private static String requiredString(JsonObject json, String field, Path directory) throws ContainerException {
-        String value = optionalString(json, field, directory, null);
+    /**
+     * Requires a container's manifest name to match its deployed artifact name.
+     *
+     * @param artifactDescription the phrase after "must match its", such as
+     *                            {@code directory name 'hello'} or
+     *                            {@code jar file name 'hello.jar'}
+     */
+    static ContainerManifest requireName(
+            ContainerManifest manifest, String expectedName, String artifactDescription) throws ContainerException {
+        if (!expectedName.equals(manifest.name())) {
+            throw new ContainerException(
+                    "Container name '" + manifest.name() + "' must match its " + artifactDescription);
+        }
+        return manifest;
+    }
+
+    private static String requiredString(JsonObject json, String field, String origin) throws ContainerException {
+        String value = optionalString(json, field, origin, null);
         if (value == null) {
-            throw new ContainerException("Missing required field '" + field + "' in " + directory.resolve(FILE_NAME));
+            throw new ContainerException("Missing required field '" + field + "' in " + FILE_NAME + " in " + origin);
         }
         return value;
     }
 
-    private static String optionalString(JsonObject json, String field, Path directory, String fallback)
+    private static String optionalString(JsonObject json, String field, String origin, String fallback)
             throws ContainerException {
         JsonElement element = json.get(field);
         if (element == null || element.isJsonNull()) {
@@ -92,12 +138,12 @@ public record ContainerManifest(String name, String version, String entry) {
         }
         if (!element.isJsonPrimitive() || !element.getAsJsonPrimitive().isString()) {
             throw new ContainerException(
-                    "Field '" + field + "' in " + directory.resolve(FILE_NAME) + " must be a string");
+                    "Field '" + field + "' in " + FILE_NAME + " in " + origin + " must be a string");
         }
         String value = element.getAsString().trim();
         if (value.isEmpty()) {
             throw new ContainerException(
-                    "Field '" + field + "' in " + directory.resolve(FILE_NAME) + " must not be blank");
+                    "Field '" + field + "' in " + FILE_NAME + " in " + origin + " must not be blank");
         }
         return value;
     }

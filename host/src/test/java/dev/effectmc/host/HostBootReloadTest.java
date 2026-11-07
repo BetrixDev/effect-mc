@@ -1,6 +1,7 @@
 package dev.effectmc.host;
 
 import dev.effectmc.host.container.ContainerException;
+import dev.effectmc.host.container.ContainerPacker;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -22,6 +23,37 @@ class HostBootReloadTest {
 
     @TempDir
     Path plugins;
+
+    @TempDir
+    Path staging;
+
+    @Test
+    void reloadsAPackedContainerFromThePluginsDirectory() throws IOException, ContainerException {
+        Path source = TestContainers.writeContainer(staging.resolve("hello"), "hello", """
+                effectmc.log("packed one");
+                export default { name: "hello" };
+                """);
+        ContainerPacker.pack(source, plugins.resolve("EffectMC"));
+        RecordingLog log = new RecordingLog();
+
+        try (HostBoot boot = new HostBoot(plugins, log.logger())) {
+            boot.start();
+            assertEquals(List.of("hello"), boot.loadedContainers());
+            assertEquals(1, count(log, "[hello] packed one"), log.joined());
+
+            Files.writeString(source.resolve("plugin.mjs"), """
+                    effectmc.log("packed two");
+                    export default { name: "hello" };
+                    """);
+            ContainerPacker.pack(source, plugins.resolve("EffectMC"));
+            boot.reload("hello");
+
+            assertEquals(List.of("hello"), boot.loadedContainers());
+            assertEquals(1, count(log, "[hello] packed one"), log.joined());
+            assertEquals(1, count(log, "[hello] packed two"), log.joined());
+            assertTrue(log.contains(Level.INFO, "Reloaded container 'hello'"), log.joined());
+        }
+    }
 
     @Test
     void reloadRebuildsOnlyTheNamedContainersContext() throws IOException, ContainerException {

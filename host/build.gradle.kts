@@ -1,4 +1,5 @@
 import java.util.zip.ZipFile
+import org.gradle.process.CommandLineArgumentProvider
 
 plugins {
     java
@@ -23,12 +24,21 @@ java {
     }
 }
 
+val packerClasspath = configurations.create("packerClasspath") {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+}
+
 dependencies {
     // Paper and Graal are provided by the server at runtime. Nothing is shaded.
     compileOnly("io.papermc.paper:paper-api:$paperVersion")
     compileOnly("com.google.code.gson:gson:$gsonVersion")
     compileOnly("org.graalvm.polyglot:polyglot:$graalVersion")
     compileOnly("org.graalvm.polyglot:js:$graalVersion")
+
+    // The packContainer tool reads plugin.json, so it needs Gson without the
+    // paper-api or Graal jars the host itself never bundles.
+    packerClasspath("com.google.code.gson:gson:$gsonVersion")
 
     testImplementation("io.papermc.paper:paper-api:$paperVersion")
     testImplementation("com.google.code.gson:gson:$gsonVersion")
@@ -88,6 +98,29 @@ val verifyHostJar = tasks.register("verifyHostJar") {
 
 tasks.check {
     dependsOn(verifyHostJar)
+}
+
+val packContainer = tasks.register<JavaExec>("packContainer") {
+    group = "build"
+    description = "Packs a loose container directory into <name>.jar. Defaults to examples/hello-container."
+
+    dependsOn(tasks.classes)
+
+    classpath = sourceSets.main.get().output + packerClasspath
+    mainClass.set("dev.effectmc.host.container.PackContainerTool")
+
+    val containerSource = providers.gradleProperty("container")
+        .orElse(layout.projectDirectory.dir("examples/hello-container").asFile.absolutePath)
+    val containerOutput = layout.buildDirectory.dir("containers")
+    outputs.dir(containerOutput)
+
+    argumentProviders.add(CommandLineArgumentProvider {
+        listOf(containerSource.get(), containerOutput.get().asFile.absolutePath)
+    })
+}
+
+tasks.assemble {
+    dependsOn(packContainer)
 }
 
 val generateAllowList = tasks.register<Exec>("generateAllowList") {

@@ -97,5 +97,9 @@ Context rebuild of one plugin, not hot module reload: other plugins keep their
 state, commands are re-registered rather than unregistered, and the sequence is
 not production-safe until the 50× leak spike passes.
 
+`gradlew packContainer` packs a loose container into `<name>.jar` under
+`build/containers/`; the jar can be dropped directly into `plugins/EffectMC/`
+and loaded through the same interface as a loose directory.
+
 See `host/README.md` for the container layout, the Graal loader, the reload
 contract, and the generated class allow-list.
