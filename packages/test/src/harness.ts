@@ -5,6 +5,7 @@ import {
   type PdcPlatformService,
   type Plugin,
   PluginRuntime,
+  Renderer,
   TickClock,
   type WorkerService,
 } from "@effectmc/core";
@@ -40,6 +41,8 @@ export interface TestHarnessOptions {
   readonly development?: boolean;
   /** Replaces the harness's silent observability layer. */
   readonly observability?: Layer.Layer<Observability, never, never>;
+  /** Replaces the default renderer so a test can assert on rendered output. */
+  readonly renderer?: Layer.Layer<Renderer, never, never>;
   /** Replaces the inline `Main` hop. Useful for asserting hop targets. */
   readonly mainThread?: MainThreadService;
   /** Replaces the inline worker behind `Paper.offload`. */
@@ -89,6 +92,7 @@ export class TestHarness<R = never, E = never> {
     this.runtime = PluginRuntime.make(plugin, {
       development: options.development,
       observability: options.observability ?? silentObservability,
+      renderer: options.renderer,
       clock: this.clock,
       registry: this.registry,
       mainThread: options.mainThread,

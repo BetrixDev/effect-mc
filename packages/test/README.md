@@ -64,6 +64,24 @@ yield * Paper.on(player, Pdc.set(player, Keys.home, home));
 Pass `worker` to replace the inline `Paper.offload` seam, or `mainThread` to
 assert hop targets.
 
+Every failure boundary funnels through the renderer, so rendered output is
+observable without a Paper server. `harness.sender.messages()` records what a
+failing command or event delivered. Pass `renderer` to replace the default and
+assert exactly what the boundary asked it to render:
+
+```ts
+import { Renderer } from "@effectmc/core";
+import { Layer } from "effect";
+
+const harness = TestHarness.make(plugin, {
+  renderer: Layer.succeed(Renderer, { render: () => "rendered by the host" }),
+});
+```
+
+Pass `observability` to capture the log line and cause; an untagged defect is
+logged with its original `Error` (and therefore its stack) rather than a
+flattened string.
+
 Commands attach through the runtime too. The harness installs a fake registrar,
 so a program that calls `Commands.attach` needs no extra layer:
 

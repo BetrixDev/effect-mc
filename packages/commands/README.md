@@ -129,8 +129,11 @@ const name = Argument.String("name", {
 
 `Command.run(command, invocation)` is the execution seam. It supplies `Main`
 and the command's sender, resolves arguments, re-checks the permission, and
-runs the handler. The Paper host and unit tests both use it; a failure's
-presentation belongs to the boundary in `@effectmc/core` (ADR-0005).
+runs the handler. The Paper host uses `CommandNode.dispatch`, which wraps that
+raw execution in `@effectmc/core`'s command boundary: tagged failures render to
+the invocation's sender, untagged defects log with their stack, and the effect
+never fails. `CommandNode.execute` stays available as the raw, fallible seam a
+test can inspect (ADR-0005).
 
 `TestHarness` from `@effectmc/test` installs a fake registrar and exposes
 `harness.commands.roots()`. Attaching a root with the same label replaces it,

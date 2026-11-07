@@ -55,6 +55,12 @@ export interface EventListener {
 
 export interface EventBusService {
   /**
+   * The policy this bus was built with. A runtime-created bus inherits the
+   * runtime's development flag, and the event boundary reads it to decide
+   * whether an untagged sync failure must fail loudly (ADR-0005).
+   */
+  readonly development: boolean;
+  /**
    * Adds an attachment to the matching listener group, creating it if needed.
    * Returns an idempotent removal closure.
    */
@@ -134,6 +140,7 @@ export const makeEventBus = (options: EventBusOptions = {}): EventBusService => 
     listeners.find((listener) => sameGroup(registration, listener));
 
   return {
+    development,
     add: (registration) => {
       let group = findGroup(registration);
       if (group === undefined) {

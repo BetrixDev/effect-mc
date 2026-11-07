@@ -146,6 +146,33 @@ Development runtimes warn instead of hanging when a program does not complete;
 the warning window is server time too. Pass `observability` to
 `PluginRuntime.make` to replace the default console layer.
 
+## Errors at the boundaries
+
+A command executor and an event dispatch are boundaries, and each has a
+different failure policy (ADR-0005). A command runs through
+`CommandNode.dispatch`, which wraps its raw `execute` in `Boundary.command`: a
+tagged failure renders to the command's sender, an untagged defect is logged
+with its stack, and the effect never fails. One bad command cannot take down
+the tick.
+
+Events apply their policy during dispatch. A tagged failure renders and logs. An
+untagged defect fails loudly in development by rethrowing from the listener, and
+renders and logs in production. Async handlers always render and log because the
+async path has no cancel window to protect. That development/production
+divergence on the sync path is intentional.
+
+`Renderer` is the swappable service behind both paths. Its default maps
+`PermissionDenied` and `SenderNotPlayer` to distinct messages, because "you lack
+permission" and "the console cannot teleport" have different fixes (ADR-0020),
+and renders any other tagged error's own message. The rendered value is text;
+the Paper host binds it to Adventure. Pass `renderer` to `PluginRuntime.make` or
+`TestHarness.make` to replace it; a test's fake sender then records the output.
+
+Tagged errors are Schema classes. No error may declare a field named `name`:
+that silently replaces `Error.name` and makes every log line print the wrong
+value. A package-wide test enforces that rule across the tagged errors this repo
+exports.
+
 ## Layout
 
 | File               | Contents                                                    |
@@ -166,4 +193,6 @@ the warning window is server time too. Pass `observability` to
 | `items.ts`         | `Items.editPdc`, the scoped item PDC handle                 |
 | `registry.ts`      | The `Registry` service and its in-memory implementation     |
 | `observability.ts` | The swappable `Observability` service and default layer     |
+| `renderer.ts`      | The swappable `Renderer` service and default layer          |
+| `boundary.ts`      | The command, sync-event, and async-event failure policies   |
 | `errors.ts`        | Tagged runtime-state, cancel, and PDC errors                |

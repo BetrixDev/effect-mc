@@ -6,6 +6,7 @@ import { Observability } from "./observability";
 import { javaPdcPlatform, PdcPlatform, type PdcPlatformService } from "./pdc";
 import { type Plugin, type RuntimeServices } from "./plugin";
 import { makeRegistry, type RegistryService, Registry } from "./registry";
+import { Renderer } from "./renderer";
 import { SenderContext, type SenderValue, unavailableSender } from "./sender";
 import {
   immediateMainThread,
@@ -26,6 +27,11 @@ export interface PluginRuntimeOptions {
   readonly programTimeout?: Duration.Input;
   /** Replaces the default console observability layer. */
   readonly observability?: Layer.Layer<Observability, never, never>;
+  /**
+   * Replaces the default renderer that turns a tagged failure into a message
+   * at a command or event boundary. Tests use it to assert rendered output.
+   */
+  readonly renderer?: Layer.Layer<Renderer, never, never>;
   /**
    * Replaces the default in-memory event bus. Hosts supply their own; a
    * supplied bus keeps its own development policy.
@@ -96,6 +102,7 @@ export class PluginRuntime<R = never, E = never> {
   private readonly development: boolean;
   private readonly programTimeout: Duration.Input;
   private readonly observability: Layer.Layer<Observability, never, never>;
+  private readonly renderer: Layer.Layer<Renderer, never, never>;
   private readonly mainThread: MainThreadService;
   private readonly worker: WorkerService;
   private readonly sender: SenderValue;
@@ -114,6 +121,7 @@ export class PluginRuntime<R = never, E = never> {
     this.eventBus = options.eventBus ?? makeEventBus({ development: this.development });
     this.programTimeout = options.programTimeout ?? DEFAULT_PROGRAM_TIMEOUT;
     this.observability = options.observability ?? Observability.layer;
+    this.renderer = options.renderer ?? Renderer.layer;
     this.mainThread = options.mainThread ?? immediateMainThread;
     this.worker = options.worker ?? immediateWorker;
     this.sender = options.sender ?? unavailableSender;
@@ -160,6 +168,7 @@ export class PluginRuntime<R = never, E = never> {
       Layer.succeed(PdcPlatform, this.pdcPlatform),
       this.hostServices,
       this.observability,
+      this.renderer,
       Layer.succeed(Clock.Clock, this.clock.clock),
     );
 

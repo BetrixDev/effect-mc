@@ -1,4 +1,4 @@
-import { Main, SenderContext } from "@effectmc/core";
+import { Boundary, Main, SenderContext } from "@effectmc/core";
 import { Context, Effect } from "effect";
 import type { AnyCommandArgument, CommandInvocation, CommandPermissionSubject } from "./argument";
 import { type AnyCommand, type Command, permissionDenied, run } from "./command";
@@ -29,6 +29,13 @@ export interface CommandNode {
    * logs them (ADR-0005).
    */
   readonly execute: (invocation: CommandInvocation) => Effect.Effect<void, unknown>;
+  /**
+   * The host-facing execution path. It wraps {@link execute} in the core
+   * command boundary: tagged failures render to this invocation's sender,
+   * untagged defects log with their stack, and the effect never fails. A host
+   * dispatches commands through this verb.
+   */
+  readonly dispatch: (invocation: CommandInvocation) => Effect.Effect<void>;
 }
 
 /**
@@ -67,6 +74,16 @@ const buildNode = (
   // checks at execution so the re-check covers the same tree (ADR-0019).
   const own = command.permission === undefined ? inherited : [...inherited, command.permission];
 
+  const execute = (invocation: CommandInvocation): Effect.Effect<void, unknown> => {
+    const missing = inherited.find(
+      (permission) => invocation.source.sender.hasPermission?.(permission) !== true,
+    );
+    if (missing !== undefined) {
+      return Effect.fail(permissionDenied(missing, invocation.source.sender));
+    }
+    return run(command, invocation).pipe(Effect.provide(context));
+  };
+
   return {
     name: command.name,
     description: command.description,
@@ -74,15 +91,12 @@ const buildNode = (
     arguments: command.arguments,
     subcommands: command.subcommands.map((child) => buildNode(child, context, own)),
     requires: (subject) => own.every((permission) => subject.hasPermission(permission)),
-    execute: (invocation) => {
-      const missing = inherited.find(
-        (permission) => invocation.source.sender.hasPermission?.(permission) !== true,
-      );
-      if (missing !== undefined) {
-        return Effect.fail(permissionDenied(missing, invocation.source.sender));
-      }
-      return run(command, invocation).pipe(Effect.provide(context));
-    },
+    execute,
+    dispatch: (invocation) =>
+      Boundary.command(execute(invocation), {
+        sender: invocation.source.sender,
+        command: command.name,
+      }).pipe(Effect.provide(context)),
   };
 };
 

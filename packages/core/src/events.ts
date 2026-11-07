@@ -1,4 +1,5 @@
 import { Cause, Effect, Exit, Queue, Stream } from "effect";
+import { Boundary } from "./boundary";
 import {
   EventBus,
   type CancellableEvent,
@@ -8,9 +9,11 @@ import {
   type EventPriority,
 } from "./event-bus";
 import { AsyncInCancellableHandler } from "./errors";
-import { Observability } from "./observability";
+import { Observability, type ObservabilityService } from "./observability";
 import { type RuntimeServices } from "./plugin";
 import { type Registration, Registry } from "./registry";
+import type { Renderer } from "./renderer";
+import { SenderContext, type SenderValue } from "./sender";
 import { SyncWindow } from "./sync-window";
 import { AsyncThread, Main } from "./threads";
 
@@ -100,6 +103,12 @@ interface WindowState {
   open: boolean;
 }
 
+type EventOutcome =
+  | { readonly _tag: "handled" }
+  | { readonly _tag: "rethrow"; readonly cause: Cause.Cause<unknown> };
+
+const handledOutcome: EventOutcome = { _tag: "handled" };
+
 const cancelFailure = (event: string, mode: EventMode): AsyncInCancellableHandler =>
   new AsyncInCancellableHandler({
     event,
@@ -141,6 +150,65 @@ const makeHandle = <T>(
     },
   }) as EventHandle<T>;
 };
+
+interface HandlerBoundaryOptions {
+  readonly eventName: string;
+  readonly handlerName: string;
+  readonly mode: EventMode;
+  readonly development: boolean;
+  readonly sender: SenderValue;
+  readonly observability: ObservabilityService;
+}
+
+/**
+ * Runs one handler failure through the boundary for its mode and reduces the
+ * answer to what the dispatcher must do. A failure inside the boundary itself
+ * is logged rather than allowed to escape into the tick.
+ */
+const observeHandler = <E>(
+  effect: Effect.Effect<void, E, never>,
+  options: HandlerBoundaryOptions,
+): Effect.Effect<EventOutcome, never, Renderer | Observability> =>
+  effect.pipe(
+    Effect.as<EventOutcome>(handledOutcome),
+    Effect.catchCause((cause) => {
+      if (Cause.hasInterruptsOnly(cause)) {
+        return Effect.succeed(handledOutcome);
+      }
+
+      const boundary =
+        options.mode === "sync"
+          ? Boundary.syncEvent(cause, {
+              event: options.eventName,
+              handler: options.handlerName,
+              sender: options.sender,
+              development: options.development,
+            }).pipe(
+              Effect.map((outcome): EventOutcome =>
+                outcome === "rethrow" ? { _tag: "rethrow", cause } : handledOutcome,
+              ),
+            )
+          : Boundary.asyncEvent(cause, {
+              event: options.eventName,
+              handler: options.handlerName,
+              sender: options.sender,
+            }).pipe(Effect.as<EventOutcome>(handledOutcome));
+
+      return boundary.pipe(
+        Effect.catchCause((boundaryCause) =>
+          Cause.hasInterruptsOnly(boundaryCause)
+            ? Effect.succeed(handledOutcome)
+            : options.observability
+                .log(
+                  "error",
+                  `Event handler for ${options.eventName} failed while reporting its failure.`,
+                  boundaryCause,
+                )
+                .pipe(Effect.as(handledOutcome)),
+        ),
+      );
+    }),
+  );
 
 /**
  * Reads events without attaching a handler. The returned stream is identified
@@ -203,9 +271,11 @@ export function attach<C extends EventClass<unknown>, E, R>(
     const registry = yield* Registry;
     const bus = yield* EventBus;
     const observability = yield* Observability;
+    const sender = yield* SenderContext;
     const context = yield* Effect.context<R | RuntimeServices>();
 
     const eventName = eventTypeName(eventType);
+    const handlerName = `${eventName}:${options.mode}:${options.priority ?? "normal"}`;
 
     const listener = makeRegistration(eventType, eventName, options, (event) => {
       // Only the sync window can cancel. An async handle is never open, even
@@ -223,16 +293,20 @@ export function attach<C extends EventClass<unknown>, E, R>(
           : handled.pipe(Effect.provideService(AsyncThread, undefined))
       ) as Effect.Effect<void, E, never>;
 
-      const observed = effect.pipe(
-        Effect.catchCause((cause) =>
-          Cause.hasInterruptsOnly(cause)
-            ? Effect.void
-            : observability.log("error", `Event handler for ${eventName} failed.`, cause),
-        ),
-      );
+      // The boundary decides what a failure means per mode: tagged errors
+      // render and log, while an untagged sync defect is rethrown in
+      // development (ADR-0005).
+      const observed = observeHandler(effect, {
+        eventName,
+        handlerName,
+        mode: options.mode,
+        development: bus.development,
+        sender,
+        observability,
+      });
 
       if (options.mode === "sync") {
-        let exit: Exit.Exit<void>;
+        let exit: Exit.Exit<EventOutcome>;
         try {
           exit = Effect.runSyncExitWith(context)(observed);
         } finally {
@@ -241,8 +315,17 @@ export function attach<C extends EventClass<unknown>, E, R>(
 
         if (Exit.isFailure(exit)) {
           Effect.runSync(
-            observability.log("error", `Event handler for ${eventName} failed.`, exit.cause),
+            observability.log(
+              "error",
+              `Event handler for ${eventName} failed while reporting its failure.`,
+              exit.cause,
+            ),
           );
+          return;
+        }
+
+        if (exit.value._tag === "rethrow") {
+          throw Cause.squash(exit.value.cause);
         }
         return;
       }
@@ -254,7 +337,7 @@ export function attach<C extends EventClass<unknown>, E, R>(
     const removeListener = bus.add(listener);
     const registration: Registration = {
       kind: "listener",
-      name: `${eventName}:${listener.mode}:${listener.priority}`,
+      name: handlerName,
     };
     const removeRegistration = registry.add(registration);
 

@@ -2,6 +2,7 @@ import { Effect, Layer, type Scope } from "effect";
 import type { EventBus } from "./event-bus";
 import type { Observability } from "./observability";
 import type { Registry } from "./registry";
+import type { Renderer } from "./renderer";
 import type { SenderContext } from "./sender";
 import type { MainThread, Worker } from "./threads";
 
@@ -13,6 +14,7 @@ import type { MainThread, Worker } from "./threads";
 export type RuntimeServices =
   | Registry
   | Observability
+  | Renderer
   | EventBus
   | MainThread
   | Worker

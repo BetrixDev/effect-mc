@@ -1,8 +1,8 @@
 /**
  * @effectmc/core
  *
- * The plugin entry point, runtime, tick clock, Registry, event surface, and
- * observability seam.
+ * The plugin entry point, runtime, tick clock, Registry, event surface, the
+ * swappable observability and renderer seams, and the error boundaries.
  */
 export { TICK_MILLIS, TickClock } from "./clock";
 export { isPlugin, Plugin, type RuntimeServices } from "./plugin";
@@ -67,6 +67,19 @@ export {
   type RegistryService,
 } from "./registry";
 export { Observability, type ObservabilityLevel, type ObservabilityService } from "./observability";
+export {
+  Boundary,
+  type CommandBoundaryOptions,
+  type EventBoundaryOptions,
+  type SyncEventOutcome,
+} from "./boundary";
+export {
+  defaultRenderer,
+  isTaggedFailure,
+  Renderer,
+  type RendererService,
+  type TaggedFailure,
+} from "./renderer";
 export {
   AsyncInCancellableHandler,
   EventThreadingMismatch,
