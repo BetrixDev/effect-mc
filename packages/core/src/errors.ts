@@ -45,6 +45,18 @@ export class SenderNotPlayer extends Schema.TaggedError<SenderNotPlayer>()("Send
 }) {}
 
 /**
+ * Raised when a command's permission passes registration but the sender lacks
+ * it at execution. It is distinct from `SenderNotPlayer`: "you lack
+ * permission" and "the console cannot teleport" have different fixes
+ * (ADR-0019, ADR-0020).
+ */
+export class PermissionDenied extends Schema.TaggedError<PermissionDenied>()("PermissionDenied", {
+  permission: Schema.String,
+  sender: Schema.String,
+  message: Schema.String,
+}) {}
+
+/**
  * Raised when a value stored under a typed PDC key does not decode with that
  * key's Schema. Absence is `Option.none`; this error is the corruption path
  * (ADR-0014).

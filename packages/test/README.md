@@ -39,18 +39,19 @@ lifetime-managed and is reported as a leak.
 
 ## Fakes
 
-| Export                | Purpose                                                       |
-| --------------------- | ------------------------------------------------------------- |
-| `FakeClock`           | The production `TickClock`; time moves only through `advance` |
-| `FakeScheduler`       | Advances a clock and lets woken fibers run                    |
-| `makeFakeEventBus`    | The in-memory event bus; `{ development }` selects its policy |
-| `makeFakeRegistry`    | An inspectable Registry that records what teardown found      |
-| `makeFakeSender`      | A command sender that records rendered messages               |
-| `makeFakePdc`         | An in-memory persistent data container                        |
-| `makeFakePdcPlatform` | Structural PDC keys and type markers for the harness          |
+| Export                     | Purpose                                                       |
+| -------------------------- | ------------------------------------------------------------- |
+| `FakeClock`                | The production `TickClock`; time moves only through `advance` |
+| `FakeScheduler`            | Advances a clock and lets woken fibers run                    |
+| `makeFakeEventBus`         | The in-memory event bus; `{ development }` selects its policy |
+| `makeFakeRegistry`         | An inspectable Registry that records what teardown found      |
+| `makeFakeSender`           | A command sender that records rendered messages               |
+| `makeFakeCommandRegistrar` | A command registrar that records attached trees               |
+| `makeFakePdc`              | An in-memory persistent data container                        |
+| `makeFakePdcPlatform`      | Structural PDC keys and type markers for the harness          |
 
 The harness exposes the same instances as `clock`, `scheduler`, `events`,
-`registry`, `sender`, `pdc`, and `pdcPlatform`. The runtime's `Sender` façade
+`registry`, `sender`, `pdc`, `pdcPlatform`, and `commands`. The runtime's `Sender` façade
 already reads the fake sender, so `Sender.send` and `Sender.asPlayer` are
 testable without a Paper server. `Pdc` reads and writes the harness's fake
 container through the fake platform, so typed persistent data is testable the
@@ -62,6 +63,20 @@ yield * Paper.on(player, Pdc.set(player, Keys.home, home));
 
 Pass `worker` to replace the inline `Paper.offload` seam, or `mainThread` to
 assert hop targets.
+
+Commands attach through the runtime too. The harness installs a fake registrar,
+so a program that calls `Commands.attach` needs no extra layer:
+
+```ts
+await harness.start();
+
+expect(harness.commands.roots().map((root) => root.name)).toEqual(["warp"]);
+```
+
+The fake registrar replaces a root when the same label is attached again,
+which is the reload behaviour: commands are re-attached, never unregistered
+(ADR-0011). Pass `sender: { permissions: ["effectmc.warp"] }` to
+`TestHarness.make` when the command tree declares a permission.
 
 `events` is the bus the runtime created, so the harness inherits the runtime's
 development policy. With `development: true` (or `NODE_ENV` set to

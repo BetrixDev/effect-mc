@@ -6,9 +6,14 @@
  */
 export { LeakedRegistrations, ProgramDidNotComplete } from "./errors";
 export { FakeClock } from "./fake-clock";
+export {
+  commandRegistrarLayer,
+  makeFakeCommandRegistrar,
+  type FakeCommandRegistrar,
+} from "./fake-commands";
 export { makeFakeEventBus, type FakeEventBus } from "./fake-events";
 export { makeFakePdc, makeFakePdcPlatform, type FakePdc, type FakePdcKey } from "./fake-pdc";
 export { makeFakeRegistry, type FakeRegistry } from "./fake-registry";
-export { makeFakeSender, type FakeSender } from "./fake-sender";
+export { makeFakeSender, type FakeSender, type FakeSenderOptions } from "./fake-sender";
 export { FakeScheduler } from "./fake-scheduler";
 export { TestHarness, type TestHarnessOptions } from "./harness";

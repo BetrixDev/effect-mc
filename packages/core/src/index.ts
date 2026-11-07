@@ -72,6 +72,7 @@ export {
   EventThreadingMismatch,
   PdcDecodeError,
   PdcHandleClosed,
+  PermissionDenied,
   RuntimeStateError,
   type RuntimeState,
   SenderNotPlayer,

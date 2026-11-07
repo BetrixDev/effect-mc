@@ -30,3 +30,21 @@ test("returns a snapshot rather than the live message list", () => {
 
   expect(sender.messages()).toEqual(["one"]);
 });
+
+test("holds the permissions a test grants it", () => {
+  const sender = makeFakeSender("alex", { permissions: ["effectmc.warp"] });
+
+  expect(sender.hasPermission("effectmc.warp")).toBe(true);
+  expect(sender.hasPermission("effectmc.admin")).toBe(false);
+});
+
+test("accepts an arbitrary permission check and name", () => {
+  const sender = makeFakeSender("ignored", {
+    name: "console",
+    hasPermission: (permission) => permission.startsWith("effectmc."),
+  });
+
+  expect(sender.name).toBe("console");
+  expect(sender.hasPermission("effectmc.warp")).toBe(true);
+  expect(sender.hasPermission("minecraft.command.op")).toBe(false);
+});

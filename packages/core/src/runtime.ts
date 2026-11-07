@@ -61,6 +61,13 @@ export interface PluginRuntimeOptions {
    * tests and non-Graal hosts provide their own.
    */
   readonly pdcPlatform?: PdcPlatformService;
+  /**
+   * Extra services a host supplies to every plugin program. The Paper host
+   * uses it for surfaces outside core, such as the command registrar; tests
+   * use it for the same fakes. The services are present at runtime but are not
+   * part of the program's declared requirements.
+   */
+  readonly hostServices?: Layer.Layer<never, never, never>;
 }
 
 type RuntimeContext<R> = Exclude<RuntimeServices, Scope.Scope> | R;
@@ -93,6 +100,7 @@ export class PluginRuntime<R = never, E = never> {
   private readonly worker: WorkerService;
   private readonly sender: SenderValue;
   private readonly pdcPlatform: PdcPlatformService;
+  private readonly hostServices: Layer.Layer<never, never, never>;
 
   private managed: ManagedRuntime.ManagedRuntime<RuntimeContext<R>, E> | undefined;
   private state: RuntimeState = "idle";
@@ -110,6 +118,7 @@ export class PluginRuntime<R = never, E = never> {
     this.worker = options.worker ?? immediateWorker;
     this.sender = options.sender ?? unavailableSender;
     this.pdcPlatform = options.pdcPlatform ?? javaPdcPlatform;
+    this.hostServices = options.hostServices ?? Layer.empty;
   }
 
   static make<R, E>(plugin: Plugin<R, E>, options: PluginRuntimeOptions = {}): PluginRuntime<R, E> {
@@ -149,6 +158,7 @@ export class PluginRuntime<R = never, E = never> {
       Layer.succeed(Worker, this.worker),
       Layer.succeed(SenderContext, this.sender),
       Layer.succeed(PdcPlatform, this.pdcPlatform),
+      this.hostServices,
       this.observability,
       Layer.succeed(Clock.Clock, this.clock.clock),
     );

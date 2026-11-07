@@ -25,6 +25,10 @@ attach work alive in a runtime-owned scope. Tear it down with `dispose()`: it
 closes the scope, empties the Registry, and disposes the Layer runtime.
 Disposal is terminal, so a reload constructs a new `PluginRuntime`.
 
+A host may pass `hostServices` to provide surfaces that live outside core, such
+as `CommandRegistrar` from `@effectmc/commands`. Those services are present at
+runtime without becoming part of a plugin program's declared requirements.
+
 Plugin time comes from a `TickClock`. One tick is 50 ms, and the clock is
 anchored at construction and then moves only when the host calls `advance()`; it
 never follows the system clock or installs a timer. A host creates one clock,
@@ -64,7 +68,8 @@ yield * Paper.on(player, Players.teleport(player, location)); // Main supplied
 ```
 
 `Sender` reads the ambient command source and `Sender.asPlayer` fails with
-`SenderNotPlayer` for the console. `Worlds` wraps block reads and writes, and
+`SenderNotPlayer` for the console. A command's permission check re-fails at
+execution with `PermissionDenied`, kept distinct from "not a player". `Worlds` wraps block reads and writes, and
 `Items.editPdc(stack, (pdc) => ...)` edits item data through a scoped handle.
 Raw Bukkit remains reachable; it compiles and runs but is outside the thread
 checker (ADR-0003).

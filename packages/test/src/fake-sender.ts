@@ -15,13 +15,26 @@ export interface FakeSender {
   readonly send: (message: string) => void;
   /** Drops the recorded messages without changing the sender's name. */
   readonly clear: () => void;
+  /** Whether this sender holds a permission. */
+  readonly hasPermission: (permission: string) => boolean;
 }
 
-export const makeFakeSender = (name = "tester"): FakeSender => {
+export interface FakeSenderOptions {
+  /** The sender's name. Defaults to `tester`. */
+  readonly name?: string;
+  /** Permissions the sender holds. Defaults to none. */
+  readonly permissions?: ReadonlyArray<string>;
+  /** Replaces the permission set with an arbitrary check. */
+  readonly hasPermission?: (permission: string) => boolean;
+}
+
+export const makeFakeSender = (name = "tester", options: FakeSenderOptions = {}): FakeSender => {
   const messages: Array<string> = [];
+  const permissions = new Set(options.permissions ?? []);
+  const check = options.hasPermission ?? ((permission: string) => permissions.has(permission));
 
   return {
-    name,
+    name: options.name ?? name,
     messages: () => messages.slice(),
     send: (message) => {
       messages.push(message);
@@ -29,5 +42,6 @@ export const makeFakeSender = (name = "tester"): FakeSender => {
     clear: () => {
       messages.length = 0;
     },
+    hasPermission: check,
   };
 };

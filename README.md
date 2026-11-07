@@ -4,15 +4,16 @@ Monorepo for EffectMC, a Paper plugin framework built on Effect.
 
 ## Layout
 
-| Path                             | Contents                                                         |
-| -------------------------------- | ---------------------------------------------------------------- |
-| `apps/docs/`                     | VitePress site with the design notes and plugin patterns         |
-| `apps/docs/.vitepress/config.ts` | Site config, nav, and sidebar                                    |
-| `host/`                          | `effectmc-host`, the Java Paper plugin that evaluates containers |
-| `packages/core/`                 | `@effectmc/core`: plugin entry, runtime, clock, events, Registry |
-| `packages/test/`                 | `@effectmc/test`: fakes and a program harness for unit tests     |
-| `packages/paper-types/`          | Generated Paper typings, overlays, and the strict consumer       |
-| `vite.config.ts`                 | Vite+ workspace, lint, format, and pack config                   |
+| Path                             | Contents                                                             |
+| -------------------------------- | -------------------------------------------------------------------- |
+| `apps/docs/`                     | VitePress site with the design notes and plugin patterns             |
+| `apps/docs/.vitepress/config.ts` | Site config, nav, and sidebar                                        |
+| `host/`                          | `effectmc-host`, the Java Paper plugin that evaluates containers     |
+| `packages/core/`                 | `@effectmc/core`: plugin entry, runtime, clock, events, Registry     |
+| `packages/commands/`             | `@effectmc/commands`: declared command trees, arguments, permissions |
+| `packages/test/`                 | `@effectmc/test`: fakes and a program harness for unit tests         |
+| `packages/paper-types/`          | Generated Paper typings, overlays, and the strict consumer           |
+| `vite.config.ts`                 | Vite+ workspace, lint, format, and pack config                       |
 
 ## Commands
 
@@ -64,6 +65,15 @@ Build or test it directly with:
 vp run @effectmc/core#build
 vp run @effectmc/core#test
 ```
+
+## `@effectmc/commands`
+
+`packages/commands` declares a command tree with subcommands, typed arguments,
+permissions, and suggestions, then attaches it with `Commands.attach`. The
+tree is re-attached on reload because Paper has no command unregistration.
+Attaching returns `void`: there is no handle to hold.
+
+See `packages/commands/README.md` for the surface.
 
 ## `@effectmc/test`
 

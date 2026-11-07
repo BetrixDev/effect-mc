@@ -10,9 +10,14 @@ import {
 } from "@effectmc/core";
 import { Duration, Effect, Layer } from "effect";
 import { LeakedRegistrations, ProgramDidNotComplete } from "./errors";
+import {
+  commandRegistrarLayer,
+  makeFakeCommandRegistrar,
+  type FakeCommandRegistrar,
+} from "./fake-commands";
 import { makeFakePdc, makeFakePdcPlatform, type FakePdc } from "./fake-pdc";
 import { makeFakeRegistry, type FakeRegistry } from "./fake-registry";
-import { makeFakeSender, type FakeSender } from "./fake-sender";
+import { makeFakeSender, type FakeSender, type FakeSenderOptions } from "./fake-sender";
 import { FakeScheduler } from "./fake-scheduler";
 
 const DEFAULT_PROGRAM_TIMEOUT: Duration.Input = "1 second";
@@ -41,6 +46,8 @@ export interface TestHarnessOptions {
   readonly worker?: WorkerService;
   /** Replaces the Java `Pdc` seam. Defaults to structural keys and markers. */
   readonly pdcPlatform?: PdcPlatformService;
+  /** Options for the fake command sender, such as its permissions. */
+  readonly sender?: FakeSenderOptions;
 }
 
 /**
@@ -57,6 +64,7 @@ export class TestHarness<R = never, E = never> {
   readonly sender: FakeSender;
   readonly pdc: FakePdc;
   readonly pdcPlatform: PdcPlatformService;
+  readonly commands: FakeCommandRegistrar;
 
   private readonly programTimeoutMillis: number;
   private started = false;
@@ -73,9 +81,10 @@ export class TestHarness<R = never, E = never> {
     this.registry = makeFakeRegistry();
     this.clock = new TickClock();
     this.scheduler = new FakeScheduler(this.clock);
-    this.sender = makeFakeSender();
+    this.sender = makeFakeSender("tester", options.sender);
     this.pdc = makeFakePdc();
     this.pdcPlatform = options.pdcPlatform ?? makeFakePdcPlatform();
+    this.commands = makeFakeCommandRegistrar();
 
     this.runtime = PluginRuntime.make(plugin, {
       development: options.development,
@@ -85,9 +94,11 @@ export class TestHarness<R = never, E = never> {
       mainThread: options.mainThread,
       worker: options.worker,
       pdcPlatform: this.pdcPlatform,
+      hostServices: commandRegistrarLayer(this.commands),
       sender: {
         name: this.sender.name,
         send: this.sender.send,
+        hasPermission: this.sender.hasPermission,
       },
     });
   }

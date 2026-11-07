@@ -328,3 +328,33 @@ test("provides the swappable observability layer to the program", async () => {
 
   await runtime.dispose();
 });
+
+const ExtraService = Context.Reference<{ readonly value: string }>("RuntimeTest/Extra", {
+  defaultValue: () => ({ value: "default" }),
+});
+
+const recordsExtra = (name: string) =>
+  Plugin(
+    name,
+    Layer.empty,
+    Effect.gen(function* () {
+      const extra = yield* ExtraService;
+      const registry = yield* Registry;
+      registry.add({ kind: "task", name: extra.value });
+    }),
+  );
+
+test("merges host services without adding them to the program's requirements", async () => {
+  const defaultRuntime = PluginRuntime.make(recordsExtra("default"), options());
+  await defaultRuntime.start();
+  expect(defaultRuntime.registry.entries()).toEqual([{ kind: "task", name: "default" }]);
+  await defaultRuntime.dispose();
+
+  const hostRuntime = PluginRuntime.make(
+    recordsExtra("host"),
+    options({ hostServices: Layer.succeed(ExtraService, { value: "host" }) }),
+  );
+  await hostRuntime.start();
+  expect(hostRuntime.registry.entries()).toEqual([{ kind: "task", name: "host" }]);
+  await hostRuntime.dispose();
+});

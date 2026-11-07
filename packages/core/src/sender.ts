@@ -17,6 +17,11 @@ export interface SenderValue {
   readonly send: (message: string) => void;
   /** The player behind the sender, when the sender is a player. */
   readonly player?: Player;
+  /**
+   * Whether the sender holds a permission. A sender that does not model
+   * permissions holds none, so a permission-protected command denies it.
+   */
+  readonly hasPermission?: (permission: string) => boolean;
 }
 
 /**
@@ -34,6 +39,7 @@ export class SenderContext extends Context.Service<SenderContext, SenderValue>()
  */
 export const unavailableSender: SenderValue = {
   name: "console",
+  hasPermission: () => false,
   send: () => {
     throw new Error(
       "No command sender is in scope. Sender is available inside a command, or when the host supplies a sender.",

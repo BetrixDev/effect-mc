@@ -7,6 +7,9 @@ export default defineConfig({
     // Tests run against workspace source, so a package does not need a build
     // before another package's tests can import it.
     alias: {
+      "@effectmc/commands": fileURLToPath(
+        new URL("./packages/commands/src/index.ts", import.meta.url),
+      ),
       "@effectmc/core": fileURLToPath(new URL("./packages/core/src/index.ts", import.meta.url)),
       "@effectmc/test": fileURLToPath(new URL("./packages/test/src/index.ts", import.meta.url)),
     },

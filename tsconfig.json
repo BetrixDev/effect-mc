@@ -9,6 +9,7 @@
     "allowImportingTsExtensions": true,
     "types": ["node"],
     "paths": {
+      "@effectmc/commands": ["./packages/commands/src/index.ts"],
       "@effectmc/core": ["./packages/core/src/index.ts"],
       "@effectmc/test": ["./packages/test/src/index.ts"]
     }
