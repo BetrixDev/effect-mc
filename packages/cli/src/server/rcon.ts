@@ -73,7 +73,14 @@ export class RconScopedReloader implements ScopedReloader {
         : new RconCommandError(`Could not reload '${name}': ${formatError(error)}`);
     }
 
-    if (/could not reload/i.test(response) || /no container named/i.test(response)) {
+    if (/no container named/i.test(response)) {
+      throw new RconCommandError(
+        `The host has no container named '${name}' loaded. ` +
+          "If this is an existing server, restart it once so the host discovers the container, " +
+          `then run effectmc dev again.\n${response.trim()}`,
+      );
+    }
+    if (/could not reload/i.test(response)) {
       throw new RconCommandError(`The host refused to reload '${name}': ${response.trim()}`);
     }
     if (response.trim().length > 0) {

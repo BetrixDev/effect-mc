@@ -43,7 +43,9 @@ test("reports the host's reload failure instead of pretending it succeeded", asy
   const { client } = connection("Could not reload 'hello': no container named 'hello'");
   const reloader = new RconScopedReloader(client);
 
-  await expect(reloader.reload("hello")).rejects.toThrow(/no container named/);
+  const failure = reloader.reload("hello");
+  await expect(failure).rejects.toThrow(/restart it once/);
+  await expect(failure).rejects.toThrow(/no container named/);
 });
 
 test("refuses a name that could inject another command", async () => {
