@@ -15,6 +15,7 @@ Monorepo for EffectMC, a Paper plugin framework built on Effect.
 | `packages/paper-types/`          | Generated Paper typings, overlays, and the strict consumer           |
 | `packages/vite/`                 | `@effectmc/vite`: builds one bundled container module and manifest   |
 | `packages/cli/`                  | `effectmc`: the managed server and save-to-reload dev loop           |
+| `packages/lint/`                 | `@effectmc/lint`: Oxlint rules for APIs the runtime cannot provide   |
 | `vite.config.ts`                 | Vite+ workspace, lint, format, and pack config                       |
 
 ## Commands
@@ -25,6 +26,7 @@ npm run dev        # VitePress dev server
 npm run build      # Build every workspace package
 npm run preview    # Preview the docs build
 npm run check      # Vite+ format, lint, and type checks
+npm run lint       # Vite+ lint
 npm run test       # Vite+ tests across the workspace
 npm run generate:allow-list  # Regenerate the host's Java allow-list from Paper typings
 ```
@@ -84,6 +86,34 @@ for assertions, so a unit test never needs a Paper installation.
 `TestHarness.teardown` fails when a plugin leaks a registration past teardown.
 
 See `packages/test/README.md` for the harness and fake APIs.
+
+## `@effectmc/lint`
+
+`packages/lint` rejects APIs the plugin runtime cannot provide: timers,
+`require`, dynamic `import()`, top-level `await`, raw `Promise` use, and
+`import.meta.url`. Register it in the same `lint` block and spread the
+recommended rule map:
+
+```ts
+import { defineConfig } from "vite-plus";
+import { recommended } from "@effectmc/lint";
+
+export default defineConfig({
+  lint: {
+    jsPlugins: ["@effectmc/lint"],
+    rules: { ...recommended },
+  },
+});
+```
+
+The rules are name-based only (ADR-0018). **Thread violations are not checked
+by lint**: `Main` and `AsyncThread` live in the effect's `R`, so the guarantee
+comes from the type system plus runtime dev asserts, not from name matching.
+See `packages/lint/README.md` for the rule table and the full honesty note.
+
+The workspace registers the plugin from source in `vite.config.ts` and enables
+the rules for the packages that run inside the Graal context. The Node toolchain
+packages keep their timers and Promises.
 
 ## Dev loop
 
