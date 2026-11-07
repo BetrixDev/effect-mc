@@ -7,6 +7,7 @@ EffectMC's domain language, repo-wide. Terms land here when a decision turns on 
 - **plugin module** — the TypeScript entry file the host evaluates. Its default export is the `Plugin` value. One module per Paper plugin.
 - **Plugin** — the declarative value a plugin module exports: a name, the Layers that satisfy its requirements, and a finite program. Distinct from `JavaPlugin`, Paper's own object, which authors reach only through `PluginRef`.
 - **plugin runtime** — the `PluginRuntime` value that builds the plugin's Layer, runs its program, and owns the scope for everything the program attached. Disposal is terminal; a restart constructs a new plugin runtime.
+- **plugin host** — the in-process owner of one plugin runtime per name. A scoped reload replaces one entry and leaves the others untouched. `PluginHost` is that owner in core; the Paper host exposes the same sequence as `/effectmc reload <name>`.
 - **program** — the finite `Effect` passed to `Plugin`. It installs registrations and then completes. A program that blocks is not a program; a long-lived stream belongs in an attach.
 - **attach** — the single registration verb. `Events.attach`, `Commands.attach`, `Tasks.attach` install something into the Registry for the plugin's lifetime and return a handle. Attaching forks scoped; the program still completes.
 - **Registry** — the host-side record of everything a plugin attached: listeners, tasks, and open GUIs. Teardown empties it before `context.close`. Commands are not recorded because they cannot be unregistered.

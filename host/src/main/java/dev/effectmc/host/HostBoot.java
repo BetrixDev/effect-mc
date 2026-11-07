@@ -2,6 +2,7 @@ package dev.effectmc.host;
 
 import dev.effectmc.host.container.Container;
 import dev.effectmc.host.container.ContainerDiscovery;
+import dev.effectmc.host.container.ContainerException;
 import dev.effectmc.host.container.ContainerFailure;
 import dev.effectmc.host.container.DiscoveryResult;
 import dev.effectmc.host.runtime.HostClassAllowList;
@@ -67,6 +68,34 @@ public final class HostBoot implements AutoCloseable {
 
     public List<String> loadedContainers() {
         return runtimes.stream().map(PluginRuntime::name).toList();
+    }
+
+    /**
+     * Caveated reload of one container: rebuild only that container's Context
+     * and leave every other container alone. This is not module-level hot
+     * reload and is not production-safe until the 50× leak spike passes.
+     *
+     * @throws ContainerException when no container has that name, or when the
+     *                            container's module cannot be read, built, or
+     *                            default-exports no Plugin value
+     */
+    public void reload(String name) throws ContainerException {
+        PluginRuntime runtime = find(name);
+        if (runtime == null) {
+            throw new ContainerException(
+                    "No container named '" + name + "' is loaded. Loaded containers: "
+                            + (runtimes.isEmpty() ? "none" : String.join(", ", loadedContainers())));
+        }
+        runtime.reload();
+    }
+
+    private PluginRuntime find(String name) {
+        for (PluginRuntime runtime : runtimes) {
+            if (runtime.name().equals(name)) {
+                return runtime;
+            }
+        }
+        return null;
     }
 
     @Override

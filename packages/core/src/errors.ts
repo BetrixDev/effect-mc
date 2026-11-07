@@ -6,6 +6,30 @@ export const runtimeStates = ["idle", "starting", "running", "failed", "disposed
 export type RuntimeState = (typeof runtimeStates)[number];
 
 /**
+ * Raised when a plugin host is asked to start a name that is already loaded.
+ * A loaded plugin is replaced through `PluginHost.reload`, never by starting a
+ * second runtime under the same name.
+ */
+export class PluginAlreadyLoaded extends Schema.TaggedError<PluginAlreadyLoaded>()(
+  "PluginAlreadyLoaded",
+  {
+    plugin: Schema.String,
+    message: Schema.String,
+  },
+) {}
+
+/**
+ * Raised when a plugin host is asked to reload a name it does not own. A
+ * reload rebuilds an existing Context; it never loads a plugin for the first
+ * time.
+ */
+export class PluginNotLoaded extends Schema.TaggedError<PluginNotLoaded>()("PluginNotLoaded", {
+  plugin: Schema.String,
+  loaded: Schema.Array(Schema.String),
+  message: Schema.String,
+}) {}
+
+/**
  * Raised when the runtime is asked to start in a state other than `idle`.
  * Disposal is terminal: the runtime never starts again, and a restart
  * constructs a new `PluginRuntime`.

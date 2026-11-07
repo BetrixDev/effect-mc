@@ -4,7 +4,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,7 +16,7 @@ class HostBootTest {
 
     @Test
     void discoversAndEvaluatesAContainerIntoTheLog() throws IOException {
-        writeContainer("hello", """
+        TestContainers.write(plugins, "hello", """
                 console.log("console output from " + effectmc.name());
                 console.warn("a warning");
                 console.error("an error");
@@ -40,12 +39,12 @@ class HostBootTest {
 
     @Test
     void givesEveryContainerItsOwnContextAndOwnerThread() throws IOException {
-        writeContainer("alpha", """
+        TestContainers.write(plugins, "alpha", """
                 globalThis.leaked = "alpha";
                 effectmc.log("thread=" + effectmc.threadName());
                 export default { name: "alpha" };
                 """);
-        writeContainer("beta", """
+        TestContainers.write(plugins, "beta", """
                 effectmc.log("thread=" + effectmc.threadName());
                 effectmc.log("leaked=" + globalThis.leaked);
                 export default { name: "beta" };
@@ -64,7 +63,7 @@ class HostBootTest {
 
     @Test
     void rejectsJavaClassLookupsOutsideTheAllowList() throws IOException {
-        writeContainer("lookup", """
+        TestContainers.write(plugins, "lookup", """
                 let allowed = "missing";
                 let denied = "missing";
                 try {
@@ -94,10 +93,10 @@ class HostBootTest {
 
     @Test
     void skipsAContainerWhoseModuleHasNoDefaultExport() throws IOException {
-        writeContainer("no-default", """
+        TestContainers.write(plugins, "no-default", """
                 effectmc.log("evaluated but not a plugin");
                 """);
-        writeContainer("good", """
+        TestContainers.write(plugins, "good", """
                 export default { name: "good" };
                 """);
         RecordingLog log = new RecordingLog();
@@ -108,17 +107,5 @@ class HostBootTest {
             assertEquals(java.util.List.of("good"), boot.loadedContainers());
             assertTrue(log.contains(java.util.logging.Level.SEVERE, "must default-export a Plugin value"), log.joined());
         }
-    }
-
-    private void writeContainer(String name, String module) throws IOException {
-        Path directory = Files.createDirectories(plugins.resolve("EffectMC").resolve(name));
-        Files.writeString(directory.resolve("plugin.json"), """
-                {
-                  "name": "%s",
-                  "version": "0.1.0",
-                  "entry": "plugin.mjs"
-                }
-                """.formatted(name));
-        Files.writeString(directory.resolve("plugin.mjs"), module);
     }
 }

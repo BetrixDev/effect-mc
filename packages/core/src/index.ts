@@ -86,8 +86,11 @@ export {
   PdcDecodeError,
   PdcHandleClosed,
   PermissionDenied,
+  PluginAlreadyLoaded,
+  PluginNotLoaded,
   RuntimeStateError,
   type RuntimeState,
   SenderNotPlayer,
 } from "./errors";
 export { PluginRuntime, type PluginRuntimeOptions } from "./runtime";
+export { PluginHost, type PluginHostOptions } from "./host";

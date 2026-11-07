@@ -92,5 +92,10 @@ cd host
 ./gradlew build
 ```
 
-See `host/README.md` for the container layout, the Graal loader, and the
-generated class allow-list.
+It also registers `/effectmc reload <name>` for admins. That is a caveated
+Context rebuild of one plugin, not hot module reload: other plugins keep their
+state, commands are re-registered rather than unregistered, and the sequence is
+not production-safe until the 50× leak spike passes.
+
+See `host/README.md` for the container layout, the Graal loader, the reload
+contract, and the generated class allow-list.

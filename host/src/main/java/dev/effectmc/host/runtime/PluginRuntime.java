@@ -62,38 +62,81 @@ public final class PluginRuntime implements AutoCloseable {
             throw new IllegalStateException("Container '" + name() + "' was already started");
         }
         callOnOwnerThread(() -> {
-            startOnOwnerThread();
+            ensureOwnerThread();
+            evaluateOnOwnerThread(moduleSource());
+            logger.info(() -> "Loaded container '" + container.name() + "' " + container.version()
+                    + " on " + Thread.currentThread().getName());
             return null;
         });
     }
 
-    private void startOnOwnerThread() throws ContainerException {
+    /**
+     * Rebuilds this container's Context in place: close the current Context and
+     * evaluate the module again on the same owner thread. This is a caveated
+     * Context rebuild, not module-level hot reload, and this container's
+     * previous Context is never left alive. Other containers are untouched.
+     *
+     * The module is read and prepared before the old Context closes, so a
+     * missing or unbuildable file leaves the running plugin alone. A module
+     * that fails to evaluate or does not default-export a Plugin does stop the
+     * container; reload again after fixing it.
+     */
+    public void reload() throws ContainerException {
+        if (!started.get()) {
+            throw new IllegalStateException("Container '" + name() + "' has not been started");
+        }
+        if (closed.get()) {
+            throw new IllegalStateException("Container '" + name() + "' is already closed");
+        }
+        callOnOwnerThread(() -> {
+            ensureOwnerThread();
+            reloadOnOwnerThread();
+            return null;
+        });
+    }
+
+    private void reloadOnOwnerThread() throws ContainerException {
+        Source source = moduleSource();
+        closeContextOnOwnerThread();
+        evaluateOnOwnerThread(source);
+        logger.info(() -> "Reloaded container '" + container.name() + "' " + container.version()
+                + " in a caveated Context rebuild (not hot module reload).");
+    }
+
+    private void ensureOwnerThread() {
         if (Thread.currentThread() != owner.get()) {
             throw new IllegalStateException("Container '" + name() + "' is not on its owner thread");
         }
+    }
 
-        HostConsole console = new HostConsole(container.name(), logger);
-        context = engine.newContext(console);
-
-        Source source;
+    /** Reads the module and builds its Source without touching the live Context. */
+    private Source moduleSource() throws ContainerException {
         try {
-            source = Source.newBuilder("js", container.readModule(), container.sourceName())
+            return Source.newBuilder("js", container.readModule(), container.sourceName())
                     .mimeType("application/javascript+module")
                     .build();
         } catch (java.io.IOException e) {
             throw new ContainerException(
                     "Could not prepare module " + container.sourceName() + ": " + e.getMessage(), e);
         }
+    }
 
-        Value exports = context.eval(source);
-        if (exports == null || !exports.hasMember("default")) {
-            throw new ContainerException(
-                    "Container '" + name() + "' (" + container.sourceName()
-                            + ") must default-export a Plugin value");
+    private void evaluateOnOwnerThread(Source source) throws ContainerException {
+        Context next = engine.newContext(new HostConsole(container.name(), logger));
+        context = next;
+
+        try {
+            Value exports = next.eval(source);
+            if (exports == null || !exports.hasMember("default")) {
+                throw new ContainerException(
+                        "Container '" + name() + "' (" + container.sourceName()
+                                + ") must default-export a Plugin value");
+            }
+        } catch (RuntimeException | Error | ContainerException error) {
+            // A failed evaluation must not leave a half-started Context behind.
+            closeContextOnOwnerThread();
+            throw error;
         }
-
-        logger.info(() -> "Loaded container '" + container.name() + "' " + container.version()
-                + " on " + Thread.currentThread().getName());
     }
 
     private <T> T callOnOwnerThread(Callable<T> task) throws ContainerException {

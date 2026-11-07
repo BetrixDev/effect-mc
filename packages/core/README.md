@@ -25,6 +25,15 @@ attach work alive in a runtime-owned scope. Tear it down with `dispose()`: it
 closes the scope, empties the Registry, and disposes the Layer runtime.
 Disposal is terminal, so a reload constructs a new `PluginRuntime`.
 
+`PluginHost` owns one runtime per plugin name and performs the caveated scoped
+reload: dispose the outgoing runtime, empty its Registry, close its Context, and
+run a freshly evaluated `Plugin` again. Other plugins keep their runtime,
+Registry, and command registrations. Commands are re-registered by running the
+program again; nothing attempts to unregister them, because the platform offers
+no such API (ADR-0011). The Paper host exposes the same sequence as
+`/effectmc reload <name>`. A reload is not hot module reload and is not
+production-safe until the 50× leak spike passes.
+
 A host may pass `hostServices` to provide surfaces that live outside core, such
 as `CommandRegistrar` from `@effectmc/commands`. Those services are present at
 runtime without becoming part of a plugin program's declared requirements.
@@ -179,6 +188,7 @@ exports.
 | ------------------ | ----------------------------------------------------------- |
 | `plugin.ts`        | `Plugin()`, the `Plugin` value, and `isPlugin()`            |
 | `runtime.ts`       | `PluginRuntime`, start/dispose, and development warning     |
+| `host.ts`          | `PluginHost`, one runtime per name and the scoped reload    |
 | `clock.ts`         | `TickClock`, tick-driven Effect time                        |
 | `events.ts`        | `Events.attach` / `Events.of`, `EventHandle`, and dispatch  |
 | `event-bus.ts`     | Listener groups and the host event-bus seam                 |

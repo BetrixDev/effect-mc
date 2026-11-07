@@ -6,3 +6,8 @@ api-version: '26.3'
 description: Hosts EffectMC containers on Paper.
 authors:
   - EffectMC
+
+permissions:
+  effectmc.reload:
+    description: Reload one EffectMC container with a caveated Context rebuild.
+    default: op
