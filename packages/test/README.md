@@ -49,8 +49,11 @@ lifetime-managed and is reported as a leak.
 | `makeFakePdc`      | An in-memory persistent data container                        |
 
 The harness exposes the same instances as `clock`, `scheduler`, `events`,
-`registry`, `sender`, and `pdc`. `sender` and `pdc` are standalone fakes today;
-the façades that consume them arrive in later layers.
+`registry`, `sender`, and `pdc`. The runtime's `Sender` façade already reads
+the fake sender, so `Sender.send` and `Sender.asPlayer` are testable without a
+Paper server; `pdc` stays a standalone fake until the `Pdc` façade lands. Pass
+`worker` to replace the inline `Paper.offload` seam, or `mainThread` to assert
+hop targets.
 
 `events` is the bus the runtime created, so the harness inherits the runtime's
 development policy. With `development: true` (or `NODE_ENV` set to

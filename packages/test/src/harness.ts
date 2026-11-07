@@ -5,6 +5,7 @@ import {
   type Plugin,
   PluginRuntime,
   TickClock,
+  type WorkerService,
 } from "@effectmc/core";
 import { Duration, Effect, Layer } from "effect";
 import { LeakedRegistrations, ProgramDidNotComplete } from "./errors";
@@ -35,6 +36,8 @@ export interface TestHarnessOptions {
   readonly observability?: Layer.Layer<Observability, never, never>;
   /** Replaces the inline `Main` hop. Useful for asserting hop targets. */
   readonly mainThread?: MainThreadService;
+  /** Replaces the inline worker behind `Paper.offload`. */
+  readonly worker?: WorkerService;
 }
 
 /**
@@ -75,6 +78,11 @@ export class TestHarness<R = never, E = never> {
       clock: this.clock,
       registry: this.registry,
       mainThread: options.mainThread,
+      worker: options.worker,
+      sender: {
+        name: this.sender.name,
+        send: this.sender.send,
+      },
     });
   }
 

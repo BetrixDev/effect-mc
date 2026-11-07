@@ -5,7 +5,15 @@ import { EventBus, makeEventBus, type EventBusService } from "./event-bus";
 import { Observability } from "./observability";
 import { type Plugin, type RuntimeServices } from "./plugin";
 import { makeRegistry, type RegistryService, Registry } from "./registry";
-import { immediateMainThread, MainThread, type MainThreadService } from "./threads";
+import { SenderContext, type SenderValue, unavailableSender } from "./sender";
+import {
+  immediateMainThread,
+  immediateWorker,
+  MainThread,
+  type MainThreadService,
+  Worker,
+  type WorkerService,
+} from "./threads";
 
 export interface PluginRuntimeOptions {
   /**
@@ -37,6 +45,16 @@ export interface PluginRuntimeOptions {
    * the Paper host should schedule it on the server thread.
    */
   readonly mainThread?: MainThreadService;
+  /**
+   * The seam behind `Paper.offload`. Defaults to running the thunk inline;
+   * the Paper host should run it on its worker pool.
+   */
+  readonly worker?: WorkerService;
+  /**
+   * The ambient command source. Defaults to a fallback that rejects output;
+   * a host or the commands surface replaces it.
+   */
+  readonly sender?: SenderValue;
 }
 
 type RuntimeContext<R> = Exclude<RuntimeServices, Scope.Scope> | R;
@@ -66,6 +84,8 @@ export class PluginRuntime<R = never, E = never> {
   private readonly programTimeout: Duration.Input;
   private readonly observability: Layer.Layer<Observability, never, never>;
   private readonly mainThread: MainThreadService;
+  private readonly worker: WorkerService;
+  private readonly sender: SenderValue;
 
   private managed: ManagedRuntime.ManagedRuntime<RuntimeContext<R>, E> | undefined;
   private state: RuntimeState = "idle";
@@ -80,6 +100,8 @@ export class PluginRuntime<R = never, E = never> {
     this.programTimeout = options.programTimeout ?? DEFAULT_PROGRAM_TIMEOUT;
     this.observability = options.observability ?? Observability.layer;
     this.mainThread = options.mainThread ?? immediateMainThread;
+    this.worker = options.worker ?? immediateWorker;
+    this.sender = options.sender ?? unavailableSender;
   }
 
   static make<R, E>(plugin: Plugin<R, E>, options: PluginRuntimeOptions = {}): PluginRuntime<R, E> {
@@ -116,6 +138,8 @@ export class PluginRuntime<R = never, E = never> {
       Layer.succeed(Registry, this.registry),
       Layer.succeed(EventBus, this.eventBus),
       Layer.succeed(MainThread, this.mainThread),
+      Layer.succeed(Worker, this.worker),
+      Layer.succeed(SenderContext, this.sender),
       this.observability,
       Layer.succeed(Clock.Clock, this.clock.clock),
     );

@@ -2,14 +2,22 @@ import { Effect, Layer, type Scope } from "effect";
 import type { EventBus } from "./event-bus";
 import type { Observability } from "./observability";
 import type { Registry } from "./registry";
-import type { MainThread } from "./threads";
+import type { SenderContext } from "./sender";
+import type { MainThread, Worker } from "./threads";
 
 /**
  * Services the runtime provides to every plugin program. A program may
  * require them without declaring them in its Layer, which is why attach verbs
  * can ask for `Scope` and `Registry` without making the author wire them.
  */
-export type RuntimeServices = Registry | Observability | EventBus | MainThread | Scope.Scope;
+export type RuntimeServices =
+  | Registry
+  | Observability
+  | EventBus
+  | MainThread
+  | Worker
+  | SenderContext
+  | Scope.Scope;
 
 /**
  * The declarative value a plugin module default-exports (ADR-0001).

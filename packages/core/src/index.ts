@@ -33,13 +33,20 @@ export { SyncWindow } from "./sync-window";
 export {
   AsyncThread,
   immediateMainThread,
+  immediateWorker,
   Main,
   MainThread,
   type MainThreadService,
   type MainValue,
   type RegionTarget,
+  Worker,
+  type WorkerService,
 } from "./threads";
 export { Paper } from "./paper";
+export { Items } from "./items";
+export { Players } from "./players";
+export { Sender, SenderContext, type SenderValue, unavailableSender } from "./sender";
+export { Worlds } from "./worlds";
 export {
   makeRegistry,
   registrationKinds,
@@ -54,5 +61,6 @@ export {
   EventThreadingMismatch,
   RuntimeStateError,
   type RuntimeState,
+  SenderNotPlayer,
 } from "./errors";
 export { PluginRuntime, type PluginRuntimeOptions } from "./runtime";

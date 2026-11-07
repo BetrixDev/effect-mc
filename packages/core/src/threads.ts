@@ -45,3 +45,19 @@ export class MainThread extends Context.Service<MainThread, MainThreadService>()
 export const immediateMainThread: MainThreadService = {
   run: (_target, effect) => effect,
 };
+
+/**
+ * The host seam behind `Paper.offload`. A Paper host runs the thunk on its
+ * worker pool and resumes the fiber afterwards; the default runs it inline,
+ * which keeps tests and single-threaded hosts working.
+ */
+export interface WorkerService {
+  readonly run: <A>(thunk: () => A) => Effect.Effect<A>;
+}
+
+export class Worker extends Context.Service<Worker, WorkerService>()("effectmc/Worker") {}
+
+/** Runs offloaded work inline. Tests and single-threaded hosts use this. */
+export const immediateWorker: WorkerService = {
+  run: (thunk) => Effect.sync(thunk),
+};

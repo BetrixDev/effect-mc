@@ -34,6 +34,17 @@ export class AsyncInCancellableHandler extends Schema.TaggedError<AsyncInCancell
 ) {}
 
 /**
+ * Raised by `Sender.asPlayer` when the current command source is the console
+ * or another non-player sender. It is distinct from `PermissionDenied` because
+ * "the console cannot teleport" and "you lack permission" have different fixes
+ * (ADR-0020).
+ */
+export class SenderNotPlayer extends Schema.TaggedError<SenderNotPlayer>()("SenderNotPlayer", {
+  sender: Schema.String,
+  message: Schema.String,
+}) {}
+
+/**
  * Raised in development when a dispatch's actual threading disagrees with the
  * mode an attachment declared. Paper can fire an event on a different thread
  * than its class suggests, so the declared mode is the authority and a

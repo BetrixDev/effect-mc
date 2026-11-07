@@ -52,6 +52,23 @@ const protect = Effect.gen(function* () {
 });
 ```
 
+The four curated façades carry `Main` in `R`, so a world-mutating call from
+async code is a compile error until it is wrapped in a hop:
+
+```ts
+import { Players, Paper } from "@effectmc/core";
+
+yield * Players.teleport(player, location); // Effect<boolean, never, Main>
+
+yield * Paper.on(player, Players.teleport(player, location)); // Main supplied
+```
+
+`Sender` reads the ambient command source and `Sender.asPlayer` fails with
+`SenderNotPlayer` for the console. `Worlds` wraps block reads and writes, and
+`Items.editPdc(stack, (pdc) => ...)` edits item data through a scoped consumer.
+Raw Bukkit remains reachable; it compiles and runs but is outside the thread
+checker (ADR-0003).
+
 An async attachment runs with `AsyncThread`, not `Main`, so it cannot cancel or
 touch the world directly. Hop with `Paper.on(player, effect)` when it needs
 `Main`:
@@ -65,6 +82,15 @@ const observeChat = Effect.gen(function* () {
     }),
   );
 });
+```
+
+`Paper.on` is a no-op when the fiber already holds `Main` for the same region.
+`Paper.offload(() => ...)` runs Java work on a worker and resumes without
+`Main`, so heavy work does not block the tick:
+
+```ts
+const row = yield * Paper.offload(() => database.fetch(uuid));
+yield * Paper.on(player, Players.teleport(player, row.location));
 ```
 
 Paper can fire an event on a thread its class does not suggest. In development
@@ -92,8 +118,13 @@ the warning window is server time too. Pass `observability` to
 | `events.ts`        | `Events.attach` / `Events.of`, `EventHandle`, and dispatch  |
 | `event-bus.ts`     | Listener groups and the host event-bus seam                 |
 | `sync-window.ts`   | The `SyncWindow` capability that gates `EventHandle.cancel` |
-| `threads.ts`       | `Main`, `AsyncThread`, and the `MainThread` hop seam        |
-| `paper.ts`         | `Paper.on`, the hop into `Main`                             |
+| `threads.ts`       | `Main`, `AsyncThread`, and the hop seams                    |
+| `paper.ts`         | `Paper.on` / `Paper.offload`, the two hops                  |
+| `facade.ts`        | The internal `Main` wrapper the façades share               |
+| `sender.ts`        | `Sender`, `SenderContext`, and `SenderNotPlayer`            |
+| `players.ts`       | `Players.teleport`                                          |
+| `worlds.ts`        | `Worlds.blockAt` / `Worlds.setBlock`                        |
+| `items.ts`         | `Items.editPdc`                                             |
 | `registry.ts`      | The `Registry` service and its in-memory implementation     |
 | `observability.ts` | The swappable `Observability` service and default layer     |
 | `errors.ts`        | Tagged runtime-state and late-cancel errors                 |

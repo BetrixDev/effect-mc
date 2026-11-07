@@ -3,15 +3,27 @@
  * `tsc --noEmit`; the `@ts-expect-error` disappears if a constraint is lost.
  */
 import { Clock, Context, Effect, Layer } from "effect";
-import type { AsyncChatEvent, Entity, Location, Player } from "@effectmc/paper-types";
-import { type AsyncInCancellableHandler } from "./errors";
+import type {
+  AsyncChatEvent,
+  Entity,
+  ItemStack,
+  Location,
+  Material,
+  Player,
+  World,
+} from "@effectmc/paper-types";
+import { type AsyncInCancellableHandler, type SenderNotPlayer } from "./errors";
 import { type EventClass } from "./event-bus";
 import { Events, type EventAttachment, type EventHandle, type EventHandler } from "./events";
+import { Items } from "./items";
 import { Paper } from "./paper";
+import { Players } from "./players";
 import { Plugin, type RuntimeServices } from "./plugin";
 import { Registry } from "./registry";
+import { Sender, SenderContext } from "./sender";
 import { SyncWindow } from "./sync-window";
-import { AsyncThread, Main, MainThread, type RegionTarget } from "./threads";
+import { AsyncThread, Main, MainThread, type RegionTarget, Worker } from "./threads";
+import { Worlds } from "./worlds";
 
 class Missing extends Context.Service<Missing, void>()("Missing") {}
 
@@ -282,3 +294,63 @@ export const asyncChatHandlerHops = () =>
       }),
     ),
   );
+
+// --- Façades carry Main ---
+
+declare const world: World;
+declare const itemStack: ItemStack;
+declare const material: Material;
+
+// Each façade method requires Main, so it cannot be run from async code
+// without a hop.
+export const teleportRequiresMain: Effect.Effect<boolean, never, Main> = Players.teleport(
+  player,
+  location,
+);
+
+// @ts-expect-error Players.teleport requires Main.
+export const teleportWithoutMain: Effect.Effect<boolean> = Players.teleport(player, location);
+
+export const worldWriteRequiresMain: Effect.Effect<void, never, Main> = Worlds.setBlock(
+  world,
+  location,
+  material,
+);
+
+// @ts-expect-error Worlds.setBlock requires Main.
+export const worldWriteWithoutMain: Effect.Effect<void> = Worlds.setBlock(
+  world,
+  location,
+  material,
+);
+
+export const itemPdcRequiresMain: Effect.Effect<string, never, Main> = Items.editPdc(
+  itemStack,
+  () => "edited",
+);
+
+// @ts-expect-error Items.editPdc requires Main.
+export const itemPdcWithoutMain: Effect.Effect<string> = Items.editPdc(itemStack, () => "edited");
+
+export const senderSendRequiresMain: Effect.Effect<void, never, SenderContext | Main> =
+  Sender.send("hello");
+
+export const senderAsPlayer: Effect.Effect<Player, SenderNotPlayer, SenderContext | Main> =
+  Sender.asPlayer;
+
+// Raw Bukkit remains reachable, compiles, and runs; it is simply invisible to
+// the thread checker (ADR-0003).
+export const rawBukkitTeleport = () => Effect.sync(() => player.teleport(location));
+
+// --- Offload ---
+
+// The offloaded work needs only the Worker seam; the result carries no Main.
+export const offloadedValue: Effect.Effect<number, never, Worker> = Paper.offload(() => 1);
+
+const afterOffload: Effect.Effect<void, never, Worker | Main> = Effect.gen(function* () {
+  yield* Paper.offload(() => 1);
+  yield* Main;
+});
+
+// @ts-expect-error Offload resumes without providing Main.
+export const offloadDoesNotProvideMain: Effect.Effect<void, never, Worker> = afterOffload;
