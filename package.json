@@ -1,5 +1,5 @@
 {
-  "name": "effectmc",
+  "name": "effectmc-workspace",
   "private": true,
   "workspaces": [
     "apps/*",

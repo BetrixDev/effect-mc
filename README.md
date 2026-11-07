@@ -13,6 +13,8 @@ Monorepo for EffectMC, a Paper plugin framework built on Effect.
 | `packages/commands/`             | `@effectmc/commands`: declared command trees, arguments, permissions |
 | `packages/test/`                 | `@effectmc/test`: fakes and a program harness for unit tests         |
 | `packages/paper-types/`          | Generated Paper typings, overlays, and the strict consumer           |
+| `packages/vite/`                 | `@effectmc/vite`: builds one bundled container module and manifest   |
+| `packages/cli/`                  | `effectmc`: the managed server and save-to-reload dev loop           |
 | `vite.config.ts`                 | Vite+ workspace, lint, format, and pack config                       |
 
 ## Commands
@@ -82,6 +84,27 @@ for assertions, so a unit test never needs a Paper installation.
 `TestHarness.teardown` fails when a plugin leaks a registration past teardown.
 
 See `packages/test/README.md` for the harness and fake APIs.
+
+## Dev loop
+
+An author project uses both toolchain packages:
+
+```ts
+// vite.config.ts
+import { effectmc } from "@effectmc/vite";
+
+export default { plugins: [effectmc()] };
+```
+
+```bash
+npx effectmc dev                 # managed Paper server
+npx effectmc dev --server ./srv  # existing installation
+```
+
+The loop builds, deploys to `plugins/EffectMC/<name>/`, and sends
+`/effectmc reload <name>` over RCON. That is the host's scoped Context rebuild,
+not hot module reload. Missing RCON configuration produces an instruction, not
+a timeout. See `packages/cli/README.md` and `packages/vite/README.md`.
 
 ## `effectmc-host`
 

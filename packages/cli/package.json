@@ -1,0 +1,27 @@
+{
+  "name": "effectmc",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The EffectMC command line: run a Paper server and reload your plugin on save.",
+  "bin": {
+    "effectmc": "./dist/cli.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "vp pack src/cli.ts",
+    "test": "vp test"
+  },
+  "dependencies": {
+    "@effectmc/vite": "0.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vite-plus": "1.5.0"
+  },
+  "peerDependencies": {
+    "vite": "*"
+  }
+}

@@ -8,6 +8,7 @@ apps/docs/.vitepress/dist
 *.tsbuildinfo
 host/.gradle
 host/build
+.effectmc/
 
 .DS_Store
 .env

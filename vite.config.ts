@@ -12,6 +12,7 @@ export default defineConfig({
       ),
       "@effectmc/core": fileURLToPath(new URL("./packages/core/src/index.ts", import.meta.url)),
       "@effectmc/test": fileURLToPath(new URL("./packages/test/src/index.ts", import.meta.url)),
+      "@effectmc/vite": fileURLToPath(new URL("./packages/vite/src/index.ts", import.meta.url)),
     },
   },
   fmt: {
