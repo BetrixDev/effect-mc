@@ -1,0 +1,22 @@
+{
+  "name": "@effectmc/warps-homes",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The v0 sample plugin: global warps in a service, per-player homes in persistent data.",
+  "type": "module",
+  "scripts": {
+    "build": "vp build"
+  },
+  "dependencies": {
+    "@effectmc/commands": "0.0.0",
+    "@effectmc/core": "0.0.0",
+    "@effectmc/paper-types": "0.0.0",
+    "effect": "4.1.2"
+  },
+  "devDependencies": {
+    "@effectmc/test": "0.0.0",
+    "@effectmc/vite": "0.0.0",
+    "typescript": "^6.0.3",
+    "vite-plus": "1.5.0"
+  }
+}

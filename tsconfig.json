@@ -18,6 +18,8 @@
   },
   "include": [
     "apps/docs/.vitepress/**/*.ts",
+    "apps/warps-homes/src/**/*.ts",
+    "apps/warps-homes/vite.config.ts",
     "packages/*/src/**/*.ts",
     "packages/*/scripts/**/*.ts",
     "vite.config.ts"

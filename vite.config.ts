@@ -40,7 +40,11 @@ export default defineConfig({
         // These packages run inside the Graal context, so the runtime-impossible
         // APIs are illegal there. The Node toolchain packages legitimately use
         // timers and Promises.
-        files: ["packages/core/src/**/*.ts", "packages/commands/src/**/*.ts"],
+        files: [
+          "packages/core/src/**/*.ts",
+          "packages/commands/src/**/*.ts",
+          "apps/warps-homes/src/**/*.ts",
+        ],
         excludeFiles: ["**/*.test.ts"],
         rules: { ...effectmcLintRules },
       },

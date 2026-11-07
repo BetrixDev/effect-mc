@@ -8,6 +8,7 @@ Monorepo for EffectMC, a Paper plugin framework built on Effect.
 | -------------------------------- | -------------------------------------------------------------------- |
 | `apps/docs/`                     | VitePress site with the design notes and plugin patterns             |
 | `apps/docs/.vitepress/config.ts` | Site config, nav, and sidebar                                        |
+| `apps/warps-homes/`              | The v0 sample plugin: warps, homes, reload, and clean disable        |
 | `host/`                          | `effectmc-host`, the Java Paper plugin that evaluates containers     |
 | `packages/core/`                 | `@effectmc/core`: plugin entry, runtime, clock, events, Registry     |
 | `packages/commands/`             | `@effectmc/commands`: declared command trees, arguments, permissions |
@@ -86,6 +87,18 @@ for assertions, so a unit test never needs a Paper installation.
 `TestHarness.teardown` fails when a plugin leaks a registration past teardown.
 
 See `packages/test/README.md` for the harness and fake APIs.
+
+## Sample plugin
+
+`apps/warps-homes` is the v0 contract proof: a plugin that registers `/warp`
+and `/home`, stores warps in a service, stores homes in player persistent data,
+survives a scoped reload, and disables without leaving a registration behind.
+It builds with the published `effectmc()` toolchain and tests through
+`PluginHost` plus the `@effectmc/test` fakes.
+
+The Java host still evaluates containers without wiring a TypeScript
+`PluginRuntime`, so the managed-server path is not exercised yet. See
+`apps/warps-homes/README.md` for the exact gap.
 
 ## `@effectmc/lint`
 
