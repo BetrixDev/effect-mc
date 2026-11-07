@@ -7,7 +7,7 @@
 export { LeakedRegistrations, ProgramDidNotComplete } from "./errors";
 export { FakeClock } from "./fake-clock";
 export { makeFakeEventBus, type FakeEventBus } from "./fake-events";
-export { makeFakePdc, type FakePdc, type FakePdcKey } from "./fake-pdc";
+export { makeFakePdc, makeFakePdcPlatform, type FakePdc, type FakePdcKey } from "./fake-pdc";
 export { makeFakeRegistry, type FakeRegistry } from "./fake-registry";
 export { makeFakeSender, type FakeSender } from "./fake-sender";
 export { FakeScheduler } from "./fake-scheduler";

@@ -2,21 +2,27 @@
  * Compile-time fixtures for the Plugin contract. This file is checked by
  * `tsc --noEmit`; the `@ts-expect-error` disappears if a constraint is lost.
  */
-import { Clock, Context, Effect, Layer } from "effect";
+import { Clock, Context, Effect, Layer, Option, Schema } from "effect";
 import type {
   AsyncChatEvent,
   Entity,
   ItemStack,
   Location,
   Material,
+  PersistentDataHolder,
   Player,
   World,
 } from "@effectmc/paper-types";
-import { type AsyncInCancellableHandler, type SenderNotPlayer } from "./errors";
+import {
+  type AsyncInCancellableHandler,
+  type PdcDecodeError,
+  type SenderNotPlayer,
+} from "./errors";
 import { type EventClass } from "./event-bus";
 import { Events, type EventAttachment, type EventHandle, type EventHandler } from "./events";
 import { Items } from "./items";
 import { Paper } from "./paper";
+import { Pdc, type PdcHandle } from "./pdc";
 import { Players } from "./players";
 import { Plugin, type RuntimeServices } from "./plugin";
 import { Registry } from "./registry";
@@ -354,3 +360,60 @@ const afterOffload: Effect.Effect<void, never, Worker | Main> = Effect.gen(funct
 
 // @ts-expect-error Offload resumes without providing Main.
 export const offloadDoesNotProvideMain: Effect.Effect<void, never, Worker> = afterOffload;
+
+// --- Schema-typed persistent data ---
+
+const Home = Schema.Struct({
+  world: Schema.String,
+  x: Schema.Number,
+  y: Schema.Number,
+});
+
+const Keys = Pdc.namespace("fixtures", {
+  home: Home,
+  owner: Schema.String,
+  count: Schema.Number,
+});
+
+declare const holder: PersistentDataHolder;
+
+// A namespace key carries its Schema into the read type.
+export const pdcGet: Effect.Effect<
+  Option.Option<{ readonly world: string; readonly x: number; readonly y: number }>,
+  PdcDecodeError,
+  Main
+> = Pdc.get(holder, Keys.home);
+
+export const pdcSet = () => Pdc.set(holder, Keys.home, { world: "world", x: 1, y: 2 });
+
+// @ts-expect-error The value must match the key's Schema.
+export const pdcSetWrongType = () => Pdc.set(holder, Keys.home, { world: "world", x: "1" });
+
+// Persistent data operations require Main, so they cannot run from async code
+// without a hop.
+// @ts-expect-error Pdc.get requires Main.
+export const pdcGetWithoutMain: Effect.Effect<Option.Option<string>> = Pdc.get(holder, Keys.owner);
+
+// @ts-expect-error Pdc.set requires Main.
+export const pdcSetWithoutMain: Effect.Effect<void> = Pdc.set(holder, Keys.owner, "alex");
+
+// Location is not a PersistentDataHolder; a block or location must go through
+// its holder (ADR-0014).
+// @ts-expect-error Location is not a PersistentDataHolder.
+export const pdcGetFromLocation = () => Pdc.get(location, Keys.owner);
+
+// The scoped item handle is typed by the same keys.
+export const itemPdcHandle: Effect.Effect<string, never, Main> = Items.editPdc(
+  itemStack,
+  (pdc: PdcHandle) => {
+    pdc.set(Keys.owner, "alex");
+    return Option.getOrThrow(pdc.get(Keys.owner));
+  },
+);
+
+declare const pdcHandle: PdcHandle;
+
+export const pdcHandleSet: void = pdcHandle.set(Keys.count, 1);
+
+// @ts-expect-error The handle is typed by the key's Schema.
+export const pdcHandleWrongType = () => pdcHandle.set(Keys.count, "1");

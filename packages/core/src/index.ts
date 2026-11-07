@@ -43,6 +43,17 @@ export {
   type WorkerService,
 } from "./threads";
 export { Paper } from "./paper";
+export {
+  javaPdcPlatform,
+  Pdc,
+  PdcPlatform,
+  type PdcHandle,
+  type PdcKey,
+  type PdcNamespace,
+  type PdcPlatformService,
+  type PdcSchema,
+  type PdcStorageKind,
+} from "./pdc";
 export { Items } from "./items";
 export { Players } from "./players";
 export { Sender, SenderContext, type SenderValue, unavailableSender } from "./sender";
@@ -59,6 +70,8 @@ export { Observability, type ObservabilityLevel, type ObservabilityService } fro
 export {
   AsyncInCancellableHandler,
   EventThreadingMismatch,
+  PdcDecodeError,
+  PdcHandleClosed,
   RuntimeStateError,
   type RuntimeState,
   SenderNotPlayer,

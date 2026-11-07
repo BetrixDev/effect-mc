@@ -45,6 +45,26 @@ export class SenderNotPlayer extends Schema.TaggedError<SenderNotPlayer>()("Send
 }) {}
 
 /**
+ * Raised when a value stored under a typed PDC key does not decode with that
+ * key's Schema. Absence is `Option.none`; this error is the corruption path
+ * (ADR-0014).
+ */
+export class PdcDecodeError extends Schema.TaggedError<PdcDecodeError>()("PdcDecodeError", {
+  key: Schema.String,
+  detail: Schema.String,
+  message: Schema.String,
+}) {}
+
+/**
+ * Raised when an `Items.editPdc` handle is used after its callback returned.
+ * The container is only valid inside the scoped consumer (ADR-0014).
+ */
+export class PdcHandleClosed extends Schema.TaggedError<PdcHandleClosed>()("PdcHandleClosed", {
+  key: Schema.String,
+  message: Schema.String,
+}) {}
+
+/**
  * Raised in development when a dispatch's actual threading disagrees with the
  * mode an attachment declared. Paper can fire an event on a different thread
  * than its class suggests, so the declared mode is the authority and a

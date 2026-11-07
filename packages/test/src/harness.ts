@@ -2,6 +2,7 @@ import {
   type EventBusService,
   type MainThreadService,
   Observability,
+  type PdcPlatformService,
   type Plugin,
   PluginRuntime,
   TickClock,
@@ -9,7 +10,7 @@ import {
 } from "@effectmc/core";
 import { Duration, Effect, Layer } from "effect";
 import { LeakedRegistrations, ProgramDidNotComplete } from "./errors";
-import { makeFakePdc, type FakePdc } from "./fake-pdc";
+import { makeFakePdc, makeFakePdcPlatform, type FakePdc } from "./fake-pdc";
 import { makeFakeRegistry, type FakeRegistry } from "./fake-registry";
 import { makeFakeSender, type FakeSender } from "./fake-sender";
 import { FakeScheduler } from "./fake-scheduler";
@@ -38,6 +39,8 @@ export interface TestHarnessOptions {
   readonly mainThread?: MainThreadService;
   /** Replaces the inline worker behind `Paper.offload`. */
   readonly worker?: WorkerService;
+  /** Replaces the Java `Pdc` seam. Defaults to structural keys and markers. */
+  readonly pdcPlatform?: PdcPlatformService;
 }
 
 /**
@@ -53,6 +56,7 @@ export class TestHarness<R = never, E = never> {
   readonly scheduler: FakeScheduler;
   readonly sender: FakeSender;
   readonly pdc: FakePdc;
+  readonly pdcPlatform: PdcPlatformService;
 
   private readonly programTimeoutMillis: number;
   private started = false;
@@ -71,6 +75,7 @@ export class TestHarness<R = never, E = never> {
     this.scheduler = new FakeScheduler(this.clock);
     this.sender = makeFakeSender();
     this.pdc = makeFakePdc();
+    this.pdcPlatform = options.pdcPlatform ?? makeFakePdcPlatform();
 
     this.runtime = PluginRuntime.make(plugin, {
       development: options.development,
@@ -79,6 +84,7 @@ export class TestHarness<R = never, E = never> {
       registry: this.registry,
       mainThread: options.mainThread,
       worker: options.worker,
+      pdcPlatform: this.pdcPlatform,
       sender: {
         name: this.sender.name,
         send: this.sender.send,

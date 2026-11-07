@@ -39,21 +39,29 @@ lifetime-managed and is reported as a leak.
 
 ## Fakes
 
-| Export             | Purpose                                                       |
-| ------------------ | ------------------------------------------------------------- |
-| `FakeClock`        | The production `TickClock`; time moves only through `advance` |
-| `FakeScheduler`    | Advances a clock and lets woken fibers run                    |
-| `makeFakeEventBus` | The in-memory event bus; `{ development }` selects its policy |
-| `makeFakeRegistry` | An inspectable Registry that records what teardown found      |
-| `makeFakeSender`   | A command sender that records rendered messages               |
-| `makeFakePdc`      | An in-memory persistent data container                        |
+| Export                | Purpose                                                       |
+| --------------------- | ------------------------------------------------------------- |
+| `FakeClock`           | The production `TickClock`; time moves only through `advance` |
+| `FakeScheduler`       | Advances a clock and lets woken fibers run                    |
+| `makeFakeEventBus`    | The in-memory event bus; `{ development }` selects its policy |
+| `makeFakeRegistry`    | An inspectable Registry that records what teardown found      |
+| `makeFakeSender`      | A command sender that records rendered messages               |
+| `makeFakePdc`         | An in-memory persistent data container                        |
+| `makeFakePdcPlatform` | Structural PDC keys and type markers for the harness          |
 
 The harness exposes the same instances as `clock`, `scheduler`, `events`,
-`registry`, `sender`, and `pdc`. The runtime's `Sender` façade already reads
-the fake sender, so `Sender.send` and `Sender.asPlayer` are testable without a
-Paper server; `pdc` stays a standalone fake until the `Pdc` façade lands. Pass
-`worker` to replace the inline `Paper.offload` seam, or `mainThread` to assert
-hop targets.
+`registry`, `sender`, `pdc`, and `pdcPlatform`. The runtime's `Sender` façade
+already reads the fake sender, so `Sender.send` and `Sender.asPlayer` are
+testable without a Paper server. `Pdc` reads and writes the harness's fake
+container through the fake platform, so typed persistent data is testable the
+same way:
+
+```ts
+yield * Paper.on(player, Pdc.set(player, Keys.home, home));
+```
+
+Pass `worker` to replace the inline `Paper.offload` seam, or `mainThread` to
+assert hop targets.
 
 `events` is the bus the runtime created, so the harness inherits the runtime's
 development policy. With `development: true` (or `NODE_ENV` set to

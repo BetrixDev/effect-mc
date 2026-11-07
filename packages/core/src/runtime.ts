@@ -3,6 +3,7 @@ import { TickClock } from "./clock";
 import { RuntimeStateError, type RuntimeState } from "./errors";
 import { EventBus, makeEventBus, type EventBusService } from "./event-bus";
 import { Observability } from "./observability";
+import { javaPdcPlatform, PdcPlatform, type PdcPlatformService } from "./pdc";
 import { type Plugin, type RuntimeServices } from "./plugin";
 import { makeRegistry, type RegistryService, Registry } from "./registry";
 import { SenderContext, type SenderValue, unavailableSender } from "./sender";
@@ -55,6 +56,11 @@ export interface PluginRuntimeOptions {
    * a host or the commands surface replaces it.
    */
   readonly sender?: SenderValue;
+  /**
+   * The Java seam behind `Pdc`. Defaults to the GraalJS/Paper implementation;
+   * tests and non-Graal hosts provide their own.
+   */
+  readonly pdcPlatform?: PdcPlatformService;
 }
 
 type RuntimeContext<R> = Exclude<RuntimeServices, Scope.Scope> | R;
@@ -86,6 +92,7 @@ export class PluginRuntime<R = never, E = never> {
   private readonly mainThread: MainThreadService;
   private readonly worker: WorkerService;
   private readonly sender: SenderValue;
+  private readonly pdcPlatform: PdcPlatformService;
 
   private managed: ManagedRuntime.ManagedRuntime<RuntimeContext<R>, E> | undefined;
   private state: RuntimeState = "idle";
@@ -102,6 +109,7 @@ export class PluginRuntime<R = never, E = never> {
     this.mainThread = options.mainThread ?? immediateMainThread;
     this.worker = options.worker ?? immediateWorker;
     this.sender = options.sender ?? unavailableSender;
+    this.pdcPlatform = options.pdcPlatform ?? javaPdcPlatform;
   }
 
   static make<R, E>(plugin: Plugin<R, E>, options: PluginRuntimeOptions = {}): PluginRuntime<R, E> {
@@ -140,6 +148,7 @@ export class PluginRuntime<R = never, E = never> {
       Layer.succeed(MainThread, this.mainThread),
       Layer.succeed(Worker, this.worker),
       Layer.succeed(SenderContext, this.sender),
+      Layer.succeed(PdcPlatform, this.pdcPlatform),
       this.observability,
       Layer.succeed(Clock.Clock, this.clock.clock),
     );

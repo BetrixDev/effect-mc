@@ -65,9 +65,42 @@ yield * Paper.on(player, Players.teleport(player, location)); // Main supplied
 
 `Sender` reads the ambient command source and `Sender.asPlayer` fails with
 `SenderNotPlayer` for the console. `Worlds` wraps block reads and writes, and
-`Items.editPdc(stack, (pdc) => ...)` edits item data through a scoped consumer.
+`Items.editPdc(stack, (pdc) => ...)` edits item data through a scoped handle.
 Raw Bukkit remains reachable; it compiles and runs but is outside the thread
 checker (ADR-0003).
+
+`Pdc` declares a namespace of Schema-typed keys once. Primitives map to their
+native PDC type, structs become nested containers, and anything else is stored
+as JSON in a string. Reads yield `Option.none` for absence and fail with
+`PdcDecodeError` for corruption; the operations require `Main` (ADR-0009,
+ADR-0014):
+
+```ts
+import { Effect, Option, Schema } from "effect";
+import { Pdc, Paper } from "@effectmc/core";
+
+const Home = Schema.Struct({
+  world: Schema.String,
+  x: Schema.Number,
+  y: Schema.Number,
+});
+
+const Keys = Pdc.namespace("homes", { home: Home, owner: Schema.String });
+
+const readOwner = Effect.gen(function* () {
+  yield* Paper.on(player, Pdc.set(player, Keys.home, { world: "world", x: 1, y: 2 }));
+  const owner = yield* Paper.on(player, Pdc.get(player, Keys.owner)); // Option<string>
+  return Option.getOrNull(owner);
+});
+```
+
+A struct write compares fields and only rewrites the ones that changed. An
+`ItemStack` is not a `PersistentDataHolder`, so its edits go through
+`Items.editPdc`; the typed handle is closed when the callback returns:
+
+```ts
+yield * Items.editPdc(stack, (pdc) => pdc.set(Keys.owner, "alex"));
+```
 
 An async attachment runs with `AsyncThread`, not `Main`, so it cannot cancel or
 touch the world directly. Hop with `Paper.on(player, effect)` when it needs
@@ -124,7 +157,8 @@ the warning window is server time too. Pass `observability` to
 | `sender.ts`        | `Sender`, `SenderContext`, and `SenderNotPlayer`            |
 | `players.ts`       | `Players.teleport`                                          |
 | `worlds.ts`        | `Worlds.blockAt` / `Worlds.setBlock`                        |
-| `items.ts`         | `Items.editPdc`                                             |
+| `pdc.ts`           | `Pdc`, Schema-typed keys, and the PDC platform seam         |
+| `items.ts`         | `Items.editPdc`, the scoped item PDC handle                 |
 | `registry.ts`      | The `Registry` service and its in-memory implementation     |
 | `observability.ts` | The swappable `Observability` service and default layer     |
-| `errors.ts`        | Tagged runtime-state and late-cancel errors                 |
+| `errors.ts`        | Tagged runtime-state, cancel, and PDC errors                |
